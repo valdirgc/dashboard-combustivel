@@ -18,7 +18,7 @@ st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initia
 # Inicialização do Cookie Manager
 cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
-# Trava de Sincronia do Navegador (Guardamos o resultado numa variável)
+# Trava de Sincronia do Navegador (O Segredo do F5)
 todos_cookies = cookie_manager.get_all()
 if todos_cookies is None:
     st.stop()
@@ -33,20 +33,20 @@ if "nivel_acesso" not in st.session_state:
     st.session_state.nivel_acesso = ""
 if "ignorar_cookie" not in st.session_state:
     st.session_state.ignorar_cookie = False
+if "relatorio_recem_enviado" not in st.session_state:
+    st.session_state.relatorio_recem_enviado = False
 
-# --- LÓGICA DE AUTO-LOGIN (AQUI ESTAVA O BUG SILENCIOSO DO F5) ---
+# --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
 try:
     if st.session_state.ignorar_cookie:
         st.session_state.ignorar_cookie = False
     else:
         pacote_sessao = cookie_manager.get(cookie="sessao_frota")
         if pacote_sessao and not st.session_state.autenticado:
-            # Se o cookie já vier desempacotado como Dicionário, usa direto.
             if isinstance(pacote_sessao, dict):
                 dados = pacote_sessao
             else:
                 dados = json.loads(pacote_sessao)
-                
             st.session_state.autenticado = True
             st.session_state.usuario_logado = dados["user"]
             st.session_state.nivel_acesso = dados["nivel"]
@@ -174,45 +174,32 @@ def extrair_dados_pdfs(arquivos):
 
 
 # ==========================================
-# 4. BARRA LATERAL FIXA (LOGO E NOME)
+# 4. TELA DE LOGIN CENTRALIZADA
 # ==========================================
-url_brasao = "logo.png"
-col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
-with col_img2:
-    try: st.image(url_brasao, use_container_width=True)
-    except: pass 
-        
-st.sidebar.markdown(
-    """
-    <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
-        Prefeitura Municipal<br>de Jaborandi/SP
-    </div>
-    """, unsafe_allow_html=True
-)
-st.sidebar.markdown("---")
+painel_login = st.empty()
 
-
-# ==========================================
-# 5. TELA DE LOGIN CENTRALIZADA (RESTAURADA)
-# ==========================================
 if not st.session_state.autenticado:
-    st.title("🏛️ Sistema de Gestão de Combustível")
-    st.write("---")
-    
-    col_espaco1, col_login, col_espaco3 = st.columns([1, 2, 1])
-    
-    with col_login:
-        st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Painel</h3>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;'>Por favor, insira suas credenciais institucionais.</p>", unsafe_allow_html=True)
-        st.write("") 
+    with painel_login.container():
+        col_l1, col_l2, col_l3 = st.columns([2, 1, 2])
+        with col_l2:
+            try: st.image("logo.png", width=150)
+            except: pass
+            
+        st.markdown("<h1 style='text-align: center;'>Gestão de Combustível</h1>", unsafe_allow_html=True)
+        st.write("---")
         
-        usuario_digitado = st.text_input("Usuário").strip()
-        senha_digitada = st.text_input("Senha", type="password")
+        col_f1, col_form, col_f3 = st.columns([1, 1.5, 1])
         
-        lembrar_me = st.checkbox("Manter-me conectado neste computador")
-        
-        if st.button("Entrar no Sistema", use_container_width=True):
-            try:
+        with col_form:
+            st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Sistema</h3>", unsafe_allow_html=True)
+            st.write("") 
+            
+            usuario_digitado = st.text_input("Usuário").strip()
+            senha_digitada = st.text_input("Senha", type="password")
+            
+            lembrar_me = st.checkbox("Manter-me conectado neste computador")
+            
+            if st.button("Entrar no Sistema", use_container_width=True):
                 login_sucesso = False
                 
                 if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
@@ -234,21 +221,17 @@ if not st.session_state.autenticado:
                         pacote = json.dumps({"user": usuario_digitado, "nivel": st.session_state.nivel_acesso})
                         expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                         cookie_manager.set("sessao_frota", pacote, expires_at=expira_em)
-                        time.sleep(0.5) 
-                    st.rerun()
+                    
+                    painel_login.empty() 
                 else:
                     st.error("Usuário ou senha incorretos! Tente novamente.")
-            
-            except Exception as e:
-                st.error("🚨 ERRO NO PROCESSO DE LOGIN.")
-                st.exception(e)
-                st.stop()
-                
-    st.stop()
+                    
+    if not st.session_state.autenticado:
+        st.stop()
 
 
 # ==========================================
-# 6. LER BANCO DE DADOS (PÓS-LOGIN)
+# 5. LER BANCO DE DADOS (PÓS-LOGIN)
 # ==========================================
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -279,57 +262,88 @@ except Exception as e:
 
 
 # ==========================================
-# 7. BARRA LATERAL E LOGOUT PROTEGIDO
+# 6. BARRA LATERAL E LOGOUT PROTEGIDO
 # ==========================================
-st.sidebar.title("Filtros Gerenciais")
+with st.sidebar:
+    col_s1, col_s2, col_s3 = st.columns([1, 2, 1])
+    with col_s2:
+        try: st.image("logo.png", use_container_width=True)
+        except: pass 
+    st.markdown("<div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>Prefeitura Municipal<br>de Jaborandi/SP</div>", unsafe_allow_html=True)
+    st.markdown("---")
 
-if not df_db.empty and len(df_db) > 0:
-    anos_disponiveis = df_db["Ano"].dropna().unique().tolist()
-    anos_disponiveis.sort(reverse=True)
-    if anos_disponiveis:
-        ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
-        df_ano = df_db[df_db["Ano"] == ano_escolhido]
-        
-        st.sidebar.write("---")
-        st.sidebar.write(f"**Resumo Global ({ano_escolhido}):**")
-        st.sidebar.write(f"Custo: {formata_moeda(df_ano['Valor Total (R$)'].sum())}")
-        st.sidebar.write(f"Volume: {formata_litro(df_ano['Quantidade (L)'].sum())}")
+    st.title("Filtros Gerenciais")
+
+    if not df_db.empty and len(df_db) > 0:
+        anos_disponiveis = df_db["Ano"].dropna().unique().tolist()
+        anos_disponiveis.sort(reverse=True)
+        if anos_disponiveis:
+            ano_escolhido = st.selectbox("Filtre as análises por Ano:", anos_disponiveis)
+            df_ano = df_db[df_db["Ano"] == ano_escolhido]
+            
+            st.write("---")
+            st.info(f"**Resumo Global ({ano_escolhido}):**\n\n"
+                    f"💰 Custo: **{formata_moeda(df_ano['Valor Total (R$)'].sum())}**\n\n"
+                    f"⛽ Volume: **{formata_litro(df_ano['Quantidade (L)'].sum())}**")
+        else:
+            ano_escolhido = None
+            df_ano = pd.DataFrame()
     else:
         ano_escolhido = None
         df_ano = pd.DataFrame()
-else:
-    ano_escolhido = None
-    df_ano = pd.DataFrame()
 
-# Rodapé da Barra Lateral e Soft Logout
-st.sidebar.markdown("---")
-st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
-tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
-st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
+    st.markdown("---")
+    st.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
+    tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
+    st.caption(f"Nível de Acesso: {tipo_perfil}")
 
-if st.sidebar.button("Sair do Sistema", use_container_width=True):
-    try:
-        if type(todos_cookies) is dict and "sessao_frota" in todos_cookies:
-            cookie_manager.delete("sessao_frota")
-        
+    if st.button("Sair do Sistema", use_container_width=True):
         st.session_state.autenticado = False
         st.session_state.usuario_logado = ""
         st.session_state.nivel_acesso = ""
         st.session_state.ignorar_cookie = True 
         
-        time.sleep(0.5) 
-        st.rerun()
-    except Exception as e:
-        st.sidebar.error("🚨 ERRO AO SAIR:")
-        st.sidebar.exception(e)
+        st.components.v1.html(
+            """
+            <script>
+            document.cookie = "sessao_frota=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            window.parent.location.reload();
+            </script>
+            """,
+            height=0
+        )
 
 
 # ==========================================
-# 8. ÁREA PRINCIPAL E UPLOAD PROTEGIDO
+# 7. ÁREA PRINCIPAL E GATILHO DO WHATSAPP
 # ==========================================
 st.title("🏛️ Painel de Gestão de Combustível")
 
-if st.session_state.nivel_acesso == "admin":
+# GATILHO DO WHATSAPP AQUI! Se um relatório acabou de ser salvo, mostra a notificação
+if st.session_state.relatorio_recem_enviado:
+    st.success("✅ O banco de dados da nuvem foi atualizado com sucesso!")
+    
+    # ⚠️ TROQUE O NÚMERO ABAIXO PELO WHATSAPP DO PREFEITO (com DDI e DDD, apenas números)
+    numero_prefeito = "5511999999999" 
+    
+    mensagem = "Olá Prefeito, os dados de consumo de combustível da frota acabam de ser atualizados no painel gerencial. O sistema já está pronto para visualização e análise."
+    link_wpp = f"https://api.whatsapp.com/send?phone={numero_prefeito}&text={mensagem.replace(' ', '%20')}"
+    
+    st.markdown(f"""
+    <a href="{link_wpp}" target="_blank" style="text-decoration: none;">
+        <div style="background-color: #25D366; color: white; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 10px; cursor: pointer;">
+            📱 Notificar Prefeito via WhatsApp
+        </div>
+    </a>
+    """, unsafe_allow_html=True)
+    
+    if st.button("❌ Dispensar Aviso"):
+        st.session_state.relatorio_recem_enviado = False
+        st.rerun()
+    st.write("---")
+
+
+if st.session_state.nivel_acesso == "admin" and not st.session_state.relatorio_recem_enviado:
     st.write("Importe os novos relatórios mensais (PDF) para alimentar a base de dados.")
     
     with st.expander("📥 Importar Novos Relatórios"):
@@ -343,8 +357,7 @@ if st.session_state.nivel_acesso == "admin":
                 dados_gerais, meses_identificados = extrair_dados_pdfs(arquivos_pdf)
                 if dados_gerais:
                     df_extraido = pd.DataFrame(dados_gerais)
-                    st.success(f"Foram extraídas {len(df_extraido)} linhas de dados de {len(arquivos_pdf)} arquivo(s)!")
-                    st.info(f"Meses identificados: {', '.join(meses_identificados)}")
+                    st.info(f"Meses identificados no PDF: {', '.join(meses_identificados)}")
                     
                     if st.button("💾 Integrar Dados ao Servidor na Nuvem"):
                         meses_ja_salvos = df_db["Mês/Ano Numérico"].dropna().unique().tolist()
@@ -354,10 +367,12 @@ if st.session_state.nivel_acesso == "admin":
                         if not df_novos.empty:
                             df_completo = pd.concat([df_db, df_novos], ignore_index=True)
                             conn.update(worksheet="Dados", data=df_completo)
-                            st.success("Novos dados enviados e consolidados com sucesso!")
+                            
+                            # Liga o gatilho para mostrar o botão do WhatsApp
+                            st.session_state.relatorio_recem_enviado = True 
                         
                         if meses_ignorados:
-                            st.error(f"Atenção: Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados para evitar duplicidade de valores.")
+                            st.error(f"Atenção: Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados.")
                         
                         st.session_state.uploader_key += 1
                         st.rerun()
@@ -369,7 +384,7 @@ elif st.session_state.nivel_acesso == "viewer":
 
 
 # ==========================================
-# 9. DASHBOARD GERENCIAL (COM IDs BLINDADAS)
+# 8. DASHBOARD GERENCIAL
 # ==========================================
 st.write("---")
 
