@@ -7,6 +7,7 @@ import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 import extra_streamlit_components as stx
 import datetime
+import time
 
 # ==========================================
 # 1. CONFIGURAÇÕES INICIAIS E MEMÓRIA
@@ -16,9 +17,7 @@ st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initia
 # Inicialização do Cookie Manager
 cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
-# --- A MÁGICA DA SINCRONIA ---
-# Se os cookies ainda não foram carregados do navegador, o Python para e ESPERA.
-# Isso resolve 100% dos bugs de deslogar sozinho!
+# Trava de Sincronia
 if cookie_manager.get_all() is None:
     st.stop()
 
@@ -192,7 +191,7 @@ st.sidebar.markdown("---")
 
 
 # ==========================================
-# 5. TELA DE LOGIN CENTRALIZADA
+# 5. TELA DE LOGIN CENTRALIZADA (COM ARMADILHA DE ERRO)
 # ==========================================
 if not st.session_state.autenticado:
     st.title("🏛️ Sistema de Gestão de Combustível")
@@ -233,12 +232,17 @@ if not st.session_state.autenticado:
                         expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                         cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
                         cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
-                    st.rerun()
+                        
+                        st.warning("🛑 MODO RASTREAMENTO ATIVADO!")
+                        st.info("Eu travei a tela de propósito. Se apareceu um erro, copie agora. Se não tiver erro, aperte F5 no seu teclado para entrar no sistema.")
+                        st.stop() # TRAVA ABSOLUTA PARA VER O ERRO
+                    else:
+                        st.rerun()
                 else:
                     st.error("Usuário ou senha incorretos! Tente novamente.")
             
             except Exception as e:
-                st.error("🚨 ERRO NO PROCESSO DE LOGIN. Copie o erro abaixo:")
+                st.error("🚨 ERRO NO PROCESSO DE LOGIN:")
                 st.exception(e)
                 st.stop()
                 
@@ -299,7 +303,7 @@ else:
     ano_escolhido = None
     df_ano = pd.DataFrame()
 
-# Rodapé da Barra Lateral e Logout
+# Rodapé da Barra Lateral e Soft Logout
 st.sidebar.markdown("---")
 st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
 tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
@@ -307,17 +311,17 @@ st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
     try:
-        # Envia comando pro JS deletar os cookies
         cookie_manager.delete("usuario_logado")
         cookie_manager.delete("nivel_acesso")
         
-        # Limpa memória e liga a FLAG de ignorar cookies no próximo carregamento
         st.session_state.autenticado = False
         st.session_state.usuario_logado = ""
         st.session_state.nivel_acesso = ""
         st.session_state.ignorar_cookie = True 
         
-        st.rerun()
+        st.sidebar.warning("🛑 MODO RASTREAMENTO ATIVADO!")
+        st.sidebar.info("Tela travada de propósito. Se apareceu um erro, copie. Se não, aperte F5 para concluir a saída do sistema.")
+        st.stop() # TRAVA ABSOLUTA PARA VER O ERRO
     except Exception as e:
         st.sidebar.error("🚨 ERRO AO SAIR:")
         st.sidebar.exception(e)
@@ -373,7 +377,7 @@ elif st.session_state.nivel_acesso == "viewer":
 st.write("---")
 
 if not df_ano.empty:
-    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+    aba1, aba2, aba3, aba4, aba5 = tabs = st.tabs([
         "📈 Evolução Geral", "🏢 Por Setor", "⛽ Por Combustível", "🚛 Por Veículo", "📅 Comparativo Anual"
     ])
     
