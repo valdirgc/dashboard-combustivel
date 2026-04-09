@@ -61,12 +61,10 @@ def formatar_tabela(df_tabela):
         df_formatado["Quantidade (L)"] = df_formatado["Quantidade (L)"].apply(formata_litro)
     return df_formatado
 
-# O "Tradutor Blindado" Turbo para o Google Sheets
 def converter_para_numero(valor):
     if pd.isna(valor): return 0.0
     if isinstance(valor, (int, float)): return float(valor)
     v_str = str(valor).strip()
-    # Arranca R$, L, espaços e qualquer letra. Sobra só número, ponto, vírgula e traço.
     v_str = re.sub(r'[^\d\.,\-]', '', v_str)
     if v_str == '': return 0.0
     if '.' in v_str and ',' in v_str:
@@ -158,7 +156,6 @@ try:
     if df_db.empty or "Veículo (Placa e Modelo)" not in df_db.columns:
         df_db = pd.DataFrame(columns=colunas_bd)
     else:
-        # A MÁGICA: Força os dados da planilha a virarem números para o gráfico
         df_db["Quantidade (L)"] = df_db["Quantidade (L)"].apply(converter_para_numero)
         df_db["Valor Total (R$)"] = df_db["Valor Total (R$)"].apply(converter_para_numero)
 except Exception:
@@ -185,7 +182,6 @@ st.sidebar.markdown(
 
 st.sidebar.markdown("---")
 
-# --- SISTEMA DE LOGIN ---
 if not st.session_state.autenticado:
     st.sidebar.subheader("🔒 Acesso Restrito (Upload)")
     st.sidebar.write("Faça login para importar relatórios.")
@@ -213,9 +209,9 @@ else:
 
 st.sidebar.markdown("---")
 
-# --- FILTRO DE ANO ---
 st.sidebar.title("Filtros Gerenciais")
 if not df_db.empty and len(df_db) > 0:
+    # Garante que o ano venha limpo para o filtro
     anos_disponiveis = df_db["Ano"].dropna().astype(str).str.replace(".0", "", regex=False).unique().tolist()
     anos_disponiveis.sort(reverse=True)
     if anos_disponiveis:
@@ -277,11 +273,13 @@ else:
 st.write("---")
 
 if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
-    df_db["Mês"] = df_db["Mês"].astype(str).str.zfill(2)
+    # BLINDAGEM DO EIXO X: Força o ".0" a sumir e garante que seja sempre 2 dígitos ("01", "02")
+    df_db["Mês"] = df_db["Mês"].astype(str).str.replace(".0", "", regex=False).str.zfill(2)
     df_db["Ano"] = df_db["Ano"].astype(str).str.replace(".0", "", regex=False)
+    
     df_db = df_db.sort_values(by=["Ano", "Mês"])
     
-    df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT)
+    df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT).fillna("Desconhecido")
     df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
     ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
     
