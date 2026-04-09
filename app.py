@@ -139,7 +139,7 @@ def extrair_dados_pdfs(arquivos):
 
 
 # ==========================================
-# 4. BARRA LATERAL (APENAS O LOGO FIxo)
+# 4. BARRA LATERAL FIXA (LOGO E NOME)
 # ==========================================
 url_brasao = "logo.png"
 col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
@@ -163,13 +163,12 @@ if not st.session_state.autenticado:
     st.title("🏛️ Sistema de Gestão de Combustível")
     st.write("---")
     
-    # Cria 3 colunas para deixar o login espremido e elegante no meio da tela
     col_espaco1, col_login, col_espaco3 = st.columns([1, 2, 1])
     
     with col_login:
         st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Painel</h3>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center;'>Por favor, insira suas credenciais institucionais.</p>", unsafe_allow_html=True)
-        st.write("") # Espaçamento
+        st.write("") 
         
         usuario_digitado = st.text_input("Usuário").strip()
         senha_digitada = st.text_input("Senha", type="password")
@@ -177,7 +176,6 @@ if not st.session_state.autenticado:
         if st.button("Entrar no Sistema", use_container_width=True):
             login_sucesso = False
             
-            # Checa se é Admin
             if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
                 if st.secrets["admin"][usuario_digitado] == senha_digitada:
                     st.session_state.autenticado = True
@@ -185,7 +183,6 @@ if not st.session_state.autenticado:
                     st.session_state.nivel_acesso = "admin"
                     login_sucesso = True
             
-            # Checa se é Leitor (Viewer)
             elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
                 if st.secrets["viewer"][usuario_digitado] == senha_digitada:
                     st.session_state.autenticado = True
@@ -198,25 +195,12 @@ if not st.session_state.autenticado:
             else:
                 st.error("Usuário ou senha incorretos! Tente novamente.")
                 
-    # O st.stop() MATA a execução do código aqui. Se não logou, ele não lê o Sheets nem desenha gráficos.
-    st.stop()
+    st.stop() # Mata a execução do código aqui.
 
 
 # ==========================================
-# 6. LOGOUT E CONEXÃO NO SHEETS (SÓ RODA SE LOGOU)
+# 6. LER BANCO DE DADOS (PÓS-LOGIN)
 # ==========================================
-st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
-tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
-st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
-
-if st.sidebar.button("Sair do Sistema", use_container_width=True):
-    st.session_state.autenticado = False
-    st.session_state.usuario_logado = ""
-    st.session_state.nivel_acesso = ""
-    st.rerun()
-
-st.sidebar.markdown("---")
-
 conn = st.connection("gsheets", type=GSheetsConnection)
 colunas_bd = [
     "Veículo (Placa e Modelo)", "Setor", "Combustível", 
@@ -230,25 +214,59 @@ try:
     else:
         df_db["Quantidade (L)"] = df_db["Quantidade (L)"].apply(converter_para_numero)
         df_db["Valor Total (R$)"] = df_db["Valor Total (R$)"].apply(converter_para_numero)
+        
+        # Tratamento das datas para os gráficos e filtros
+        df_db["Mês"] = df_db["Mês"].astype(str).str.replace(".0", "", regex=False).str.zfill(2)
+        df_db["Ano"] = df_db["Ano"].astype(str).str.replace(".0", "", regex=False)
+        df_db = df_db.sort_values(by=["Ano", "Mês"])
+        df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT).fillna("Desconhecido")
+        df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
+        ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
+        
 except Exception:
     df_db = pd.DataFrame(columns=colunas_bd)
+    ordem_cronologica = []
 
 
 # ==========================================
-# 7. FILTROS LATERAIS E TELA DE UPLOAD
+# 7. BARRA LATERAL (FILTROS, RESUMO E SAIR)
 # ==========================================
 st.sidebar.title("Filtros Gerenciais")
+
 if not df_db.empty and len(df_db) > 0:
-    anos_disponiveis = df_db["Ano"].dropna().astype(str).str.replace(".0", "", regex=False).unique().tolist()
+    anos_disponiveis = df_db["Ano"].dropna().unique().tolist()
     anos_disponiveis.sort(reverse=True)
     if anos_disponiveis:
         ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
+        df_ano = df_db[df_db["Ano"] == ano_escolhido]
+        
+        st.sidebar.write("---")
+        st.sidebar.write(f"**Resumo Global ({ano_escolhido}):**")
+        st.sidebar.write(f"Custo: {formata_moeda(df_ano['Valor Total (R$)'].sum())}")
+        st.sidebar.write(f"Volume: {formata_litro(df_ano['Quantidade (L)'].sum())}")
     else:
         ano_escolhido = None
+        df_ano = pd.DataFrame()
 else:
     ano_escolhido = None
+    df_ano = pd.DataFrame()
+
+# Rodapé da Barra Lateral (Dados do Usuário)
+st.sidebar.markdown("---")
+st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
+tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
+st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
+
+if st.sidebar.button("Sair do Sistema", use_container_width=True):
+    st.session_state.autenticado = False
+    st.session_state.usuario_logado = ""
+    st.session_state.nivel_acesso = ""
+    st.rerun()
 
 
+# ==========================================
+# 8. ÁREA PRINCIPAL E UPLOAD PROTEGIDO
+# ==========================================
 st.title("🏛️ Painel de Gestão de Combustível")
 
 if st.session_state.nivel_acesso == "admin":
@@ -291,26 +309,11 @@ elif st.session_state.nivel_acesso == "viewer":
 
 
 # ==========================================
-# 8. DASHBOARD GERENCIAL
+# 9. DASHBOARD GERENCIAL
 # ==========================================
 st.write("---")
 
-if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
-    df_db["Mês"] = df_db["Mês"].astype(str).str.replace(".0", "", regex=False).str.zfill(2)
-    df_db["Ano"] = df_db["Ano"].astype(str).str.replace(".0", "", regex=False)
-    
-    df_db = df_db.sort_values(by=["Ano", "Mês"])
-    df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT).fillna("Desconhecido")
-    df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
-    ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
-    
-    df_ano = df_db[df_db["Ano"] == ano_escolhido]
-    
-    st.sidebar.write("---")
-    st.sidebar.write(f"**Resumo Global ({ano_escolhido}):**")
-    st.sidebar.write(f"Custo: {formata_moeda(df_ano['Valor Total (R$)'].sum())}")
-    st.sidebar.write(f"Volume: {formata_litro(df_ano['Quantidade (L)'].sum())}")
-
+if not df_ano.empty:
     aba1, aba2, aba3, aba4, aba5 = st.tabs([
         "📈 Evolução Geral", "🏢 Por Setor", "⛽ Por Combustível", "🚛 Por Veículo", "📅 Comparativo Anual"
     ])
