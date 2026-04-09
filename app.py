@@ -3,6 +3,7 @@ import pdfplumber
 import pandas as pd
 import re
 import os
+import time  # <-- A biblioteca que vai resolver o nosso problema de tempo
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 import extra_streamlit_components as stx
@@ -13,8 +14,12 @@ import datetime
 # ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
-# Inicializa o Gerenciador de Cookies
-cookie_manager = stx.CookieManager()
+# Inicializa o Gerenciador de Cookies com uma chave única
+@st.cache_resource(experimental_allow_widgets=True)
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -29,11 +34,11 @@ if "nivel_acesso" not in st.session_state:
 usuario_cookie = cookie_manager.get(cookie="usuario_logado")
 nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
 
+# Se encontrou o cookie e ainda não autenticou nesta sessão, ele loga sozinho
 if usuario_cookie and nivel_cookie and not st.session_state.autenticado:
     st.session_state.autenticado = True
     st.session_state.usuario_logado = usuario_cookie
     st.session_state.nivel_acesso = nivel_cookie
-
 
 # ==========================================
 # 2. CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI)
@@ -188,7 +193,6 @@ if not st.session_state.autenticado:
         usuario_digitado = st.text_input("Usuário").strip()
         senha_digitada = st.text_input("Senha", type="password")
         
-        # NOVA OPÇÃO: Lembrar-me
         lembrar_me = st.checkbox("Manter-me conectado neste computador")
         
         if st.button("Entrar no Sistema", use_container_width=True):
@@ -210,10 +214,11 @@ if not st.session_state.autenticado:
                     
             if login_sucesso:
                 if lembrar_me:
-                    # Se marcou, cria o cookie com validade de 30 dias
                     expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                     cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
                     cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
+                    # PAUSA DE 0.5 SEGUNDOS PARA O NAVEGADOR SALVAR O COOKIE
+                    time.sleep(0.5) 
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos! Tente novamente.")
@@ -273,19 +278,19 @@ else:
     ano_escolhido = None
     df_ano = pd.DataFrame()
 
-# Rodapé da Barra Lateral (Dados do Usuário e Logout)
+# Rodapé da Barra Lateral
 st.sidebar.markdown("---")
 st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
 tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
 st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
-    # Ao sair, rasga o crachá digital (deleta os cookies) e limpa a memória
     cookie_manager.delete("usuario_logado")
     cookie_manager.delete("nivel_acesso")
     st.session_state.autenticado = False
     st.session_state.usuario_logado = ""
     st.session_state.nivel_acesso = ""
+    time.sleep(0.5) # Pausa para deletar com segurança
     st.rerun()
 
 
