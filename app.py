@@ -18,10 +18,13 @@ st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initia
 # Inicialização do Cookie Manager
 cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
-# Trava de Sincronia do Navegador (O Segredo do F5)
-todos_cookies = cookie_manager.get_all()
-if todos_cookies is None:
-    st.stop()
+# --- O "DUPLO CLIQUE INVISÍVEL" PARA SALVAR O F5 ---
+# Força o Streamlit a recarregar a página sozinho 1 vez na primeira vez que abre,
+# dando tempo exato para o JavaScript do navegador entregar os cookies pro Python.
+if "primeira_leitura" not in st.session_state:
+    st.session_state.primeira_leitura = True
+    time.sleep(0.5) 
+    st.rerun() 
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -191,16 +194,7 @@ st.sidebar.markdown("---")
 # 5. TELA DE LOGIN CENTRALIZADA
 # ==========================================
 if not st.session_state.autenticado:
-    
-    # Brasão Centralizado na tela de Login (Ajustado para não ficar gigante)
-    col_l1, col_l2, col_l3 = st.columns([1, 1, 1])
-    with col_l2:
-        col_img_space1, col_img_center, col_img_space3 = st.columns([1, 2, 1])
-        with col_img_center:
-            try: st.image("logo.png", use_container_width=True)
-            except: pass
-
-    st.markdown("<h1 style='text-align: center;'>Sistema de Gestão de Combustível</h1>", unsafe_allow_html=True)
+    st.title("🏛️ Sistema de Gestão de Combustível")
     st.write("---")
     
     col_espaco1, col_login, col_espaco3 = st.columns([1, 2, 1])
@@ -244,7 +238,7 @@ if not st.session_state.autenticado:
                     st.error("Usuário ou senha incorretos! Tente novamente.")
             
             except Exception as e:
-                st.error("ERRO NO PROCESSO DE LOGIN.")
+                st.error("🚨 ERRO NO PROCESSO DE LOGIN. Copie o erro abaixo:")
                 st.exception(e)
                 st.stop()
                 
@@ -294,10 +288,11 @@ if not df_db.empty and len(df_db) > 0:
         ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
         df_ano = df_db[df_db["Ano"] == ano_escolhido]
         
+        # O RESUMO BONITÃO DE VOLTA!
         st.sidebar.write("---")
-        st.sidebar.write(f"**Resumo Global ({ano_escolhido}):**")
-        st.sidebar.write(f"Custo: {formata_moeda(df_ano['Valor Total (R$)'].sum())}")
-        st.sidebar.write(f"Volume: {formata_litro(df_ano['Quantidade (L)'].sum())}")
+        st.sidebar.info(f"**Resumo Global ({ano_escolhido}):**\n\n"
+                        f"💰 Custo: **{formata_moeda(df_ano['Valor Total (R$)'].sum())}**\n\n"
+                        f"⛽ Volume: **{formata_litro(df_ano['Quantidade (L)'].sum())}**")
     else:
         ano_escolhido = None
         df_ano = pd.DataFrame()
@@ -313,9 +308,10 @@ st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
     try:
-        # Apaga o cookie se ele existir no navegador
-        if type(todos_cookies) is dict and "sessao_frota" in todos_cookies:
-            cookie_manager.delete("sessao_frota")
+        todos_cookies_del = cookie_manager.get_all()
+        if type(todos_cookies_del) is dict:
+            if "sessao_frota" in todos_cookies_del:
+                cookie_manager.delete("sessao_frota")
         
         st.session_state.autenticado = False
         st.session_state.usuario_logado = ""
