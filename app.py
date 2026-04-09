@@ -16,12 +16,7 @@ import json
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
 # Inicialização do Cookie Manager
-cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
-
-# Trava de Sincronia do Navegador (O Segredo do F5)
-todos_cookies = cookie_manager.get_all()
-if todos_cookies is None:
-    st.stop()
+cookie_manager = stx.CookieManager(key="frota_mgr")
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -37,21 +32,19 @@ if "relatorio_recem_enviado" not in st.session_state:
     st.session_state.relatorio_recem_enviado = False
 
 # --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
-try:
-    if st.session_state.ignorar_cookie:
-        st.session_state.ignorar_cookie = False
-    else:
-        pacote_sessao = cookie_manager.get(cookie="sessao_frota")
-        if pacote_sessao and not st.session_state.autenticado:
-            if isinstance(pacote_sessao, dict):
-                dados = pacote_sessao
-            else:
-                dados = json.loads(pacote_sessao)
+if not st.session_state.autenticado and not st.session_state.ignorar_cookie:
+    pacote_sessao = cookie_manager.get(cookie="sessao_frota")
+    if pacote_sessao:
+        try:
+            dados = json.loads(pacote_sessao)
             st.session_state.autenticado = True
             st.session_state.usuario_logado = dados["user"]
             st.session_state.nivel_acesso = dados["nivel"]
-except Exception as e:
-    pass
+        except:
+            pass
+
+if st.session_state.ignorar_cookie:
+    st.session_state.ignorar_cookie = False
 
 
 # ==========================================
@@ -64,6 +57,7 @@ st.markdown("""
     .stButton>button {
         background-color: #0C3C7A; color: white; border-radius: 8px; 
         border: none; padding: 0.5rem 1rem; transition: all 0.3s ease; font-weight: 600;
+        width: 100%;
     }
     .stButton>button:hover { background-color: #082954; color: white; transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     div[data-testid="stMetricValue"] { color: #0C3C7A; font-weight: 800; }
@@ -174,24 +168,40 @@ def extrair_dados_pdfs(arquivos):
 
 
 # ==========================================
-# 4. TELA DE LOGIN CENTRALIZADA
+# 4. BARRA LATERAL FIXA (LOGO E NOME)
+# ==========================================
+url_brasao = "logo.png"
+col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
+with col_img2:
+    try: st.image(url_brasao, use_container_width=True)
+    except: pass 
+        
+st.sidebar.markdown(
+    """
+    <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
+        Prefeitura Municipal<br>de Jaborandi/SP
+    </div>
+    """, unsafe_allow_html=True
+)
+st.sidebar.markdown("---")
+
+
+# ==========================================
+# 5. TELA DE LOGIN CENTRALIZADA (VISUAL ORIGINAL RESTAURADO)
 # ==========================================
 painel_login = st.empty()
 
 if not st.session_state.autenticado:
     with painel_login.container():
-        col_l1, col_l2, col_l3 = st.columns([2, 1, 2])
-        with col_l2:
-            try: st.image("logo.png", width=150)
-            except: pass
-            
-        st.markdown("<h1 style='text-align: center;'>Gestão de Combustível</h1>", unsafe_allow_html=True)
+        st.title("🏛️ Sistema de Gestão de Combustível")
         st.write("---")
         
-        col_f1, col_form, col_f3 = st.columns([1, 1.5, 1])
+        # Caixinha de login centralizada perfeitamente (1-2-1)
+        col_espaco1, col_login, col_espaco3 = st.columns([1, 2, 1])
         
-        with col_form:
-            st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Sistema</h3>", unsafe_allow_html=True)
+        with col_login:
+            st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Painel</h3>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center;'>Por favor, insira suas credenciais institucionais.</p>", unsafe_allow_html=True)
             st.write("") 
             
             usuario_digitado = st.text_input("Usuário").strip()
@@ -231,7 +241,7 @@ if not st.session_state.autenticado:
 
 
 # ==========================================
-# 5. LER BANCO DE DADOS (PÓS-LOGIN)
+# 6. LER BANCO DE DADOS (PÓS-LOGIN)
 # ==========================================
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -262,69 +272,62 @@ except Exception as e:
 
 
 # ==========================================
-# 6. BARRA LATERAL E LOGOUT PROTEGIDO
+# 7. BARRA LATERAL E LOGOUT PROTEGIDO
 # ==========================================
-with st.sidebar:
-    col_s1, col_s2, col_s3 = st.columns([1, 2, 1])
-    with col_s2:
-        try: st.image("logo.png", use_container_width=True)
-        except: pass 
-    st.markdown("<div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>Prefeitura Municipal<br>de Jaborandi/SP</div>", unsafe_allow_html=True)
-    st.markdown("---")
+st.sidebar.title("Filtros Gerenciais")
 
-    st.title("Filtros Gerenciais")
-
-    if not df_db.empty and len(df_db) > 0:
-        anos_disponiveis = df_db["Ano"].dropna().unique().tolist()
-        anos_disponiveis.sort(reverse=True)
-        if anos_disponiveis:
-            ano_escolhido = st.selectbox("Filtre as análises por Ano:", anos_disponiveis)
-            df_ano = df_db[df_db["Ano"] == ano_escolhido]
-            
-            st.write("---")
-            st.info(f"**Resumo Global ({ano_escolhido}):**\n\n"
-                    f"💰 Custo: **{formata_moeda(df_ano['Valor Total (R$)'].sum())}**\n\n"
-                    f"⛽ Volume: **{formata_litro(df_ano['Quantidade (L)'].sum())}**")
-        else:
-            ano_escolhido = None
-            df_ano = pd.DataFrame()
+if not df_db.empty and len(df_db) > 0:
+    anos_disponiveis = df_db["Ano"].dropna().unique().tolist()
+    anos_disponiveis.sort(reverse=True)
+    if anos_disponiveis:
+        ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
+        df_ano = df_db[df_db["Ano"] == ano_escolhido]
+        
+        st.sidebar.write("---")
+        st.sidebar.info(f"**Resumo Global ({ano_escolhido}):**\n\n"
+                        f"💰 Custo: **{formata_moeda(df_ano['Valor Total (R$)'].sum())}**\n\n"
+                        f"⛽ Volume: **{formata_litro(df_ano['Quantidade (L)'].sum())}**")
     else:
         ano_escolhido = None
         df_ano = pd.DataFrame()
+else:
+    ano_escolhido = None
+    df_ano = pd.DataFrame()
 
-    st.markdown("---")
-    st.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
-    tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
-    st.caption(f"Nível de Acesso: {tipo_perfil}")
+# Rodapé da Barra Lateral e Soft Logout
+st.sidebar.markdown("---")
+st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
+tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
+st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
-    if st.button("Sair do Sistema", use_container_width=True):
-        st.session_state.autenticado = False
-        st.session_state.usuario_logado = ""
-        st.session_state.nivel_acesso = ""
-        st.session_state.ignorar_cookie = True 
-        
-        st.components.v1.html(
-            """
-            <script>
-            document.cookie = "sessao_frota=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-            window.parent.location.reload();
-            </script>
-            """,
-            height=0
-        )
+if st.sidebar.button("Sair do Sistema", use_container_width=True):
+    st.session_state.autenticado = False
+    st.session_state.usuario_logado = ""
+    st.session_state.nivel_acesso = ""
+    st.session_state.ignorar_cookie = True 
+    
+    st.components.v1.html(
+        """
+        <script>
+        document.cookie = "sessao_frota=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        window.parent.location.reload();
+        </script>
+        """,
+        height=0
+    )
 
 
 # ==========================================
-# 7. ÁREA PRINCIPAL E GATILHO DO WHATSAPP
+# 8. ÁREA PRINCIPAL E GATILHO DO WHATSAPP
 # ==========================================
 st.title("🏛️ Painel de Gestão de Combustível")
 
-# GATILHO DO WHATSAPP AQUI! Se um relatório acabou de ser salvo, mostra a notificação
+# GATILHO DO WHATSAPP DO PREFEITO
 if st.session_state.relatorio_recem_enviado:
     st.success("✅ O banco de dados da nuvem foi atualizado com sucesso!")
     
     # ⚠️ TROQUE O NÚMERO ABAIXO PELO WHATSAPP DO PREFEITO (com DDI e DDD, apenas números)
-    numero_prefeito = "556296962071" 
+    numero_prefeito = "5511999999999" 
     
     mensagem = "Olá Prefeito, os dados de consumo de combustível da frota acabam de ser atualizados no painel gerencial. O sistema já está pronto para visualização e análise."
     link_wpp = f"https://api.whatsapp.com/send?phone={numero_prefeito}&text={mensagem.replace(' ', '%20')}"
@@ -357,6 +360,7 @@ if st.session_state.nivel_acesso == "admin" and not st.session_state.relatorio_r
                 dados_gerais, meses_identificados = extrair_dados_pdfs(arquivos_pdf)
                 if dados_gerais:
                     df_extraido = pd.DataFrame(dados_gerais)
+                    st.success(f"Foram extraídas {len(df_extraido)} linhas de dados de {len(arquivos_pdf)} arquivo(s)!")
                     st.info(f"Meses identificados no PDF: {', '.join(meses_identificados)}")
                     
                     if st.button("💾 Integrar Dados ao Servidor na Nuvem"):
@@ -368,11 +372,10 @@ if st.session_state.nivel_acesso == "admin" and not st.session_state.relatorio_r
                             df_completo = pd.concat([df_db, df_novos], ignore_index=True)
                             conn.update(worksheet="Dados", data=df_completo)
                             
-                            # Liga o gatilho para mostrar o botão do WhatsApp
                             st.session_state.relatorio_recem_enviado = True 
                         
                         if meses_ignorados:
-                            st.error(f"Atenção: Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados.")
+                            st.error(f"Atenção: Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados para evitar duplicidade.")
                         
                         st.session_state.uploader_key += 1
                         st.rerun()
@@ -384,7 +387,7 @@ elif st.session_state.nivel_acesso == "viewer":
 
 
 # ==========================================
-# 8. DASHBOARD GERENCIAL
+# 9. DASHBOARD GERENCIAL
 # ==========================================
 st.write("---")
 
