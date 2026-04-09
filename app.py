@@ -3,7 +3,6 @@ import pdfplumber
 import pandas as pd
 import re
 import os
-import time
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 import extra_streamlit_components as stx
@@ -14,8 +13,12 @@ import datetime
 # ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
-# Inicialização limpa e atualizada do Cookie Manager
-cookie_manager = stx.CookieManager()
+# Inicialização limpa do Cookie Manager
+@st.cache_resource(experimental_allow_widgets=True)
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -27,8 +30,6 @@ if "nivel_acesso" not in st.session_state:
     st.session_state.nivel_acesso = ""
 
 # --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
-# Executa um leve delay invisível apenas na checagem inicial para garantir a leitura do cookie
-time.sleep(0.1)
 usuario_cookie = cookie_manager.get(cookie="usuario_logado")
 nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
 
@@ -217,7 +218,6 @@ if not st.session_state.autenticado:
                     expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                     cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
                     cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
-                    time.sleep(0.6) # Tempo para o navegador gravar o cookie de fato
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos! Tente novamente.")
@@ -277,19 +277,19 @@ else:
     ano_escolhido = None
     df_ano = pd.DataFrame()
 
-# Rodapé da Barra Lateral
+# Rodapé da Barra Lateral e Soft Logout
 st.sidebar.markdown("---")
 st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
 tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
 st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
+    # Deleta os cookies sem forçar o erro de colisão e limpa o estado
     cookie_manager.delete("usuario_logado")
     cookie_manager.delete("nivel_acesso")
     st.session_state.autenticado = False
     st.session_state.usuario_logado = ""
     st.session_state.nivel_acesso = ""
-    time.sleep(0.6) 
     st.rerun()
 
 
@@ -338,7 +338,7 @@ elif st.session_state.nivel_acesso == "viewer":
 
 
 # ==========================================
-# 9. DASHBOARD GERENCIAL
+# 9. DASHBOARD GERENCIAL (COM IDs BLINDADAS)
 # ==========================================
 st.write("---")
 
@@ -346,6 +346,9 @@ if not df_ano.empty:
     aba1, aba2, aba3, aba4, aba5 = st.tabs([
         "📈 Evolução Geral", "🏢 Por Setor", "⛽ Por Combustível", "🚛 Por Veículo", "📅 Comparativo Anual"
     ])
+    
+    # Usando o ano_escolhido na KEY do gráfico garante que eles nunca vão se duplicar
+    id_sufixo = f"_{ano_escolhido}"
     
     # --- ABA 1: GERAL ---
     with aba1:
@@ -358,11 +361,11 @@ if not df_ano.empty:
         with col1:
             fig1 = px.bar(resumo_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", title="Custo Financeiro (R$)", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig1.update_traces(textposition='outside')
-            st.plotly_chart(fig1, use_container_width=True, key="graf_geral_custo")
+            st.plotly_chart(fig1, use_container_width=True, key=f"graf_geral_custo{id_sufixo}")
         with col2:
             fig2 = px.bar(resumo_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", title="Volume Consumido (Litros)", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig2.update_traces(textposition='outside')
-            st.plotly_chart(fig2, use_container_width=True, key="graf_geral_vol")
+            st.plotly_chart(fig2, use_container_width=True, key=f"graf_geral_vol{id_sufixo}")
             
         st.write("**Tabela de Consolidação Mensal**")
         st.dataframe(formatar_tabela(resumo_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
@@ -380,11 +383,11 @@ if not df_ano.empty:
         with col_s1:
             fig_s1 = px.bar(resumo_setor_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", color_discrete_sequence=["#0C3C7A"], title=f"Custo (R$)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_s1.update_traces(textposition='auto')
-            st.plotly_chart(fig_s1, use_container_width=True, key="graf_setor_custo")
+            st.plotly_chart(fig_s1, use_container_width=True, key=f"graf_setor_custo{id_sufixo}")
         with col_s2:
             fig_s2 = px.bar(resumo_setor_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", color_discrete_sequence=["#4CAF50"], title=f"Consumo (L)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_s2.update_traces(textposition='auto')
-            st.plotly_chart(fig_s2, use_container_width=True, key="graf_setor_vol")
+            st.plotly_chart(fig_s2, use_container_width=True, key=f"graf_setor_vol{id_sufixo}")
             
         col_tabela1, col_tabela2 = st.columns([2, 1])
         with col_tabela1:
@@ -408,11 +411,11 @@ if not df_ano.empty:
         with col_c1:
             fig_c1 = px.bar(resumo_comb_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", color_discrete_sequence=["#0C3C7A"], title=f"Custo (R$)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_c1.update_traces(textposition='auto')
-            st.plotly_chart(fig_c1, use_container_width=True, key="graf_comb_custo")
+            st.plotly_chart(fig_c1, use_container_width=True, key=f"graf_comb_custo{id_sufixo}")
         with col_c2:
             fig_c2 = px.bar(resumo_comb_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", color_discrete_sequence=["#4CAF50"], title=f"Consumo (L)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_c2.update_traces(textposition='auto')
-            st.plotly_chart(fig_c2, use_container_width=True, key="graf_comb_vol")
+            st.plotly_chart(fig_c2, use_container_width=True, key=f"graf_comb_vol{id_sufixo}")
             
         st.write(f"**Tabela de Detalhamento - {comb_escolhido}**")
         st.dataframe(formatar_tabela(resumo_comb_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
@@ -436,11 +439,11 @@ if not df_ano.empty:
         with col_v1:
             fig_v1 = px.line(resumo_veiculo, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", markers=True, color_discrete_sequence=["#0C3C7A"], title="Curva de Custo (R$)")
             fig_v1.update_traces(textposition="top center")
-            st.plotly_chart(fig_v1, use_container_width=True, key="graf_veic_custo")
+            st.plotly_chart(fig_v1, use_container_width=True, key=f"graf_veic_custo{id_sufixo}")
         with col_v2:
             fig_v2 = px.line(resumo_veiculo, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", markers=True, color_discrete_sequence=["#4CAF50"], title="Curva de Volume (L)")
             fig_v2.update_traces(textposition="top center")
-            st.plotly_chart(fig_v2, use_container_width=True, key="graf_veic_vol")
+            st.plotly_chart(fig_v2, use_container_width=True, key=f"graf_veic_vol{id_sufixo}")
             
         st.write(f"**Histórico de Lançamentos - {veiculo_escolhido}**")
         st.dataframe(formatar_tabela(resumo_veiculo[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
@@ -463,11 +466,11 @@ if not df_ano.empty:
         with col_a1:
             fig_a1 = px.bar(resumo_comparativo, x="Ano", y="Valor Total (R$)", text="Texto Valor", color="Ano", title=f"Variação Financeira - {mes_escolhido}", color_discrete_sequence=px.colors.qualitative.Set1)
             fig_a1.update_traces(textposition='outside')
-            st.plotly_chart(fig_a1, use_container_width=True, key="graf_ano_custo")
+            st.plotly_chart(fig_a1, use_container_width=True, key=f"graf_ano_custo{id_sufixo}")
         with col_a2:
             fig_a2 = px.bar(resumo_comparativo, x="Ano", y="Quantidade (L)", text="Texto Litros", color="Ano", title=f"Variação de Volume (L) - {mes_escolhido}", color_discrete_sequence=px.colors.qualitative.Set1)
             fig_a2.update_traces(textposition='outside')
-            st.plotly_chart(fig_a2, use_container_width=True, key="graf_ano_vol")
+            st.plotly_chart(fig_a2, use_container_width=True, key=f"graf_ano_vol{id_sufixo}")
             
         st.write(f"**Tabela Comparativa Anual - {mes_escolhido}**")
         st.dataframe(formatar_tabela(resumo_comparativo[["Ano", "Quantidade (L)", "Valor Total (R$)"]]), hide_index=True, use_container_width=True)
