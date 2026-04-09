@@ -1,0 +1,354 @@
+import streamlit as st
+import pdfplumber
+import pandas as pd
+import re
+import os
+import plotly.express as px
+
+# Configuração da página (Sempre a primeira linha)
+st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
+
+# --- INICIALIZAÇÃO DA MEMÓRIA (Para limpar o Upload) ---
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+
+# --- CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI) ---
+st.markdown("""
+<style>
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+    h1, h2, h3 { color: #0C3C7A; font-family: 'Segoe UI', sans-serif; font-weight: 700; }
+    .stButton>button {
+        background-color: #0C3C7A; color: white; border-radius: 8px; 
+        border: none; padding: 0.5rem 1rem; transition: all 0.3s ease; font-weight: 600;
+    }
+    .stButton>button:hover {
+        background-color: #082954; color: white; transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    div[data-testid="stMetricValue"] { color: #0C3C7A; font-weight: 800; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px; background-color: transparent; border-radius: 6px 6px 0px 0px;
+        padding: 10px 20px; border: 1px solid transparent;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #E8F0FE; border-bottom: 4px solid #0C3C7A !important;
+        color: #0C3C7A !important; font-weight: 800;
+    }
+    [data-testid="stSidebar"] { background-color: #F8F9FA; border-right: 1px solid #DEE2E6; }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🏛️ Gestão de Combustível")
+st.write("Painel gerencial da frota municipal. Importe relatórios (PDF) para alimentar a base ou analise o histórico abaixo.")
+
+ARQUIVO_BD = "historico_combustivel.csv"
+
+MESES_PT = {
+    "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+    "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+    "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro", "00": "Desconhecido"
+}
+
+def formata_moeda(valor):
+    return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+def formata_litro(valor):
+    return f"{valor:,.2f} L".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+def formatar_tabela(df_tabela):
+    df_formatado = df_tabela.copy()
+    if "Valor Total (R$)" in df_formatado.columns:
+        df_formatado["Valor Total (R$)"] = df_formatado["Valor Total (R$)"].apply(formata_moeda)
+    if "Quantidade (L)" in df_formatado.columns:
+        df_formatado["Quantidade (L)"] = df_formatado["Quantidade (L)"].apply(formata_litro)
+    return df_formatado
+
+@st.cache_data(show_spinner="Analisando PDFs e extraindo dados...")
+def extrair_dados_pdfs(arquivos):
+    dados_gerais = []
+    meses_identificados = set()
+    
+    for arquivo in arquivos:
+        texto_completo = ""
+        with pdfplumber.open(arquivo) as pdf:
+            for pagina in pdf.pages:
+                texto_pagina = pagina.extract_text(layout=True)
+                if texto_pagina:
+                    texto_completo += texto_pagina + "\n"
+        
+        mes_sugerido = "00/0000" 
+        match_periodo = re.search(r"Período:\s*De\s*(\d{2}/\d{2}/\d{4})", texto_completo)
+        if match_periodo:
+            mes_sugerido = match_periodo.group(1)[3:] 
+            meses_identificados.add(mes_sugerido)
+            
+        linhas = texto_completo.split('\n')
+        placa_atual = None
+        combustivel_atual = "Não Identificado"
+        setor_atual = "Não Identificado"
+        
+        for linha in linhas:
+            linha_limpa = linha.replace("|", "").strip()
+            
+            match_veiculo = re.search(r"VE[IÍ]CULO\s*:\s*(.*?)(?:\s+ESP[ÉE]CIE|$)", linha_limpa, re.IGNORECASE)
+            if match_veiculo:
+                placa_atual = match_veiculo.group(1).strip()
+                placa_atual = re.sub(r'\s+', ' ', placa_atual)
+                combustivel_atual = "Não Identificado"
+                setor_atual = "Não Identificado"
+                
+                match_combustivel = re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE)
+                if match_combustivel:
+                    combustivel_atual = match_combustivel.group(1).strip()
+            
+            elif placa_atual and re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE):
+                match_combustivel = re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE)
+                combustivel_atual = match_combustivel.group(1).strip()
+
+            elif placa_atual and re.search(r"UNIDADE\s*/\s*SETOR:\s*(.+)", linha_limpa, re.IGNORECASE):
+                match_setor = re.search(r"UNIDADE\s*/\s*SETOR:\s*(.+)", linha_limpa, re.IGNORECASE)
+                setor_atual = match_setor.group(1).strip()
+            
+            elif "TOTAL VE" in linha_limpa.upper() and placa_atual:
+                numeros = re.findall(r"\d+(?:\.\d+)*(?:,\d+)?", linha_limpa)
+                if len(numeros) >= 2:
+                    try:
+                        litros_float = float(numeros[-2].replace('.', '').replace(',', '.'))
+                        valor_float = float(numeros[-1].replace('.', '').replace(',', '.'))
+                        mes_num, ano_num = mes_sugerido.split("/")
+                        dados_gerais.append({
+                            "Veículo (Placa e Modelo)": placa_atual,
+                            "Setor": setor_atual,
+                            "Combustível": combustivel_atual,
+                            "Quantidade (L)": litros_float,
+                            "Valor Total (R$)": valor_float,
+                            "Mês/Ano Numérico": mes_sugerido,
+                            "Mês": str(mes_num).zfill(2),
+                            "Ano": int(ano_num)
+                        })
+                    except ValueError:
+                        pass
+                placa_atual = None 
+    return dados_gerais, list(meses_identificados)
+
+# --- ÁREA DE UPLOAD ---
+with st.expander("📥 Importar Novos Relatórios Mensais (PDF)"):
+    arquivos_pdf = st.file_uploader(
+        "Selecione os arquivos para adicionar ao banco de dados", 
+        type=["pdf"], 
+        accept_multiple_files=True,
+        key=f"uploader_{st.session_state.uploader_key}"
+    )
+
+    if arquivos_pdf:
+        try:
+            dados_gerais, meses_identificados = extrair_dados_pdfs(arquivos_pdf)
+            
+            if dados_gerais:
+                df = pd.DataFrame(dados_gerais)
+                st.success(f"Foram extraídas {len(df)} linhas de dados de {len(arquivos_pdf)} arquivo(s)!")
+                st.info(f"Meses identificados: {', '.join(meses_identificados)}")
+                
+                if st.button("💾 Integrar Dados ao Histórico Geral"):
+                    if os.path.exists(ARQUIVO_BD):
+                        df_historico = pd.read_csv(ARQUIVO_BD)
+                        meses_ja_salvos = df_historico["Mês/Ano Numérico"].unique().tolist()
+                        df_novos = df[~df["Mês/Ano Numérico"].isin(meses_ja_salvos)]
+                        meses_ignorados = df[df["Mês/Ano Numérico"].isin(meses_ja_salvos)]["Mês/Ano Numérico"].unique().tolist()
+                        
+                        if not df_novos.empty:
+                            df_novos.to_csv(ARQUIVO_BD, mode='a', header=False, index=False)
+                            st.success("Novos dados anexados ao banco com sucesso!")
+                        
+                        if meses_ignorados:
+                            st.error(f"Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados para evitar duplicidade.")
+                    else:
+                        df.to_csv(ARQUIVO_BD, index=False)
+                        st.success("Banco de dados criado e populado com sucesso!")
+                    
+                    st.session_state.uploader_key += 1
+                    st.rerun()
+
+        except Exception as e:
+            st.error(f"Erro ao processar: {e}")
+
+# ==========================================
+# DASHBOARD GERENCIAL (PREFEITO)
+# ==========================================
+st.write("---")
+
+if os.path.exists(ARQUIVO_BD):
+    df_db = pd.read_csv(ARQUIVO_BD)
+    df_db["Mês"] = df_db["Mês"].astype(str).str.zfill(2)
+    df_db["Ano"] = df_db["Ano"].astype(int).astype(str)
+    df_db = df_db.sort_values(by=["Ano", "Mês"])
+    
+    df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT)
+    df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
+    ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
+    
+    # --- BARRA LATERAL (BRASÃO E NOME DA PREFEITURA) ---
+    url_brasao = "logo.png"
+    
+    # Centraliza o brasão usando colunas
+    col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
+    with col_img2:
+        try:
+            st.image(url_brasao, use_container_width=True)
+        except:
+            pass # Se a imagem não for encontrada, ele ignora sem dar erro feio na tela
+            
+    # Texto da Prefeitura logo abaixo da imagem
+    st.sidebar.markdown(
+        """
+        <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
+            Prefeitura Municipal<br>de Jaborandi/SP
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+            
+    st.sidebar.title("Filtros Gerenciais")
+    anos_disponiveis = df_db["Ano"].unique().tolist()
+    anos_disponiveis.sort(reverse=True)
+    ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
+    
+    df_ano = df_db[df_db["Ano"] == ano_escolhido]
+    
+    st.sidebar.write("---")
+    st.sidebar.write(f"**Resumo Global ({ano_escolhido}):**")
+    st.sidebar.write(f"Custo: {formata_moeda(df_ano['Valor Total (R$)'].sum())}")
+    st.sidebar.write(f"Volume: {formata_litro(df_ano['Quantidade (L)'].sum())}")
+
+    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+        "📈 Evolução Geral", "🏢 Por Setor", "⛽ Por Combustível", "🚛 Por Veículo", "📅 Comparativo Anual"
+    ])
+    
+    # --- ABA 1: GERAL ---
+    with aba1:
+        st.subheader(f"Custos e Volume Totais ({ano_escolhido})")
+        resumo_mes = df_ano.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        resumo_mes["Texto Valor"] = resumo_mes["Valor Total (R$)"].apply(formata_moeda)
+        resumo_mes["Texto Litros"] = resumo_mes["Quantidade (L)"].apply(formata_litro)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            fig1 = px.bar(resumo_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", title="Custo Financeiro (R$)", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            fig1.update_traces(textposition='outside')
+            st.plotly_chart(fig1, use_container_width=True)
+        with col2:
+            fig2 = px.bar(resumo_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", title="Volume Consumido (Litros)", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            fig2.update_traces(textposition='outside')
+            st.plotly_chart(fig2, use_container_width=True)
+            
+        st.write("**Tabela de Consolidação Mensal**")
+        st.dataframe(formatar_tabela(resumo_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
+        
+    # --- ABA 2: SETOR ---
+    with aba2:
+        st.subheader(f"Investigação por Setor ({ano_escolhido})")
+        setor_escolhido = st.selectbox("Selecione o Setor:", df_ano["Setor"].unique().tolist())
+        df_setor = df_ano[df_ano["Setor"] == setor_escolhido]
+        resumo_setor_mes = df_setor.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        resumo_setor_mes["Texto Valor"] = resumo_setor_mes["Valor Total (R$)"].apply(formata_moeda)
+        resumo_setor_mes["Texto Litros"] = resumo_setor_mes["Quantidade (L)"].apply(formata_litro)
+        
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            fig_s1 = px.bar(resumo_setor_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", color_discrete_sequence=["#0C3C7A"], title=f"Custo (R$)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            fig_s1.update_traces(textposition='auto')
+            st.plotly_chart(fig_s1, use_container_width=True)
+        with col_s2:
+            fig_s2 = px.bar(resumo_setor_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", color_discrete_sequence=["#4CAF50"], title=f"Consumo (L)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            fig_s2.update_traces(textposition='auto')
+            st.plotly_chart(fig_s2, use_container_width=True)
+            
+        col_tabela1, col_tabela2 = st.columns([2, 1])
+        with col_tabela1:
+            st.write(f"**Detalhamento Financeiro - {setor_escolhido}**")
+            st.dataframe(formatar_tabela(resumo_setor_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
+        with col_tabela2:
+            st.write(f"**Frota Ativa neste Setor ({ano_escolhido})**")
+            veiculos_do_setor = pd.DataFrame(df_setor["Veículo (Placa e Modelo)"].unique(), columns=["Veículos Vinculados"])
+            st.dataframe(veiculos_do_setor, hide_index=True, use_container_width=True)
+            
+    # --- ABA 3: COMBUSTÍVEL ---
+    with aba3:
+        st.subheader(f"Investigação por Combustível ({ano_escolhido})")
+        comb_escolhido = st.selectbox("Selecione o Combustível:", df_ano["Combustível"].unique().tolist())
+        df_comb = df_ano[df_ano["Combustível"] == comb_escolhido]
+        resumo_comb_mes = df_comb.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        resumo_comb_mes["Texto Valor"] = resumo_comb_mes["Valor Total (R$)"].apply(formata_moeda)
+        resumo_comb_mes["Texto Litros"] = resumo_comb_mes["Quantidade (L)"].apply(formata_litro)
+        
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            fig_c1 = px.bar(resumo_comb_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", color_discrete_sequence=["#0C3C7A"], title=f"Custo (R$)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            fig_c1.update_traces(textposition='auto')
+            st.plotly_chart(fig_c1, use_container_width=True)
+        with col_c2:
+            fig_c2 = px.bar(resumo_comb_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", color_discrete_sequence=["#4CAF50"], title=f"Consumo (L)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            fig_c2.update_traces(textposition='auto')
+            st.plotly_chart(fig_c2, use_container_width=True)
+            
+        st.write(f"**Tabela de Detalhamento - {comb_escolhido}**")
+        st.dataframe(formatar_tabela(resumo_comb_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
+
+    # --- ABA 4: POR VEÍCULO ---
+    with aba4:
+        st.subheader(f"Evolução Individual de Veículo ({ano_escolhido})")
+        veiculos_disp = df_ano["Veículo (Placa e Modelo)"].sort_values().unique().tolist()
+        veiculo_escolhido = st.selectbox("Selecione o Veículo:", veiculos_disp)
+        
+        df_veiculo = df_ano[df_ano["Veículo (Placa e Modelo)"] == veiculo_escolhido]
+        resumo_veiculo = df_veiculo.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        resumo_veiculo["Texto Valor"] = resumo_veiculo["Valor Total (R$)"].apply(formata_moeda)
+        resumo_veiculo["Texto Litros"] = resumo_veiculo["Quantidade (L)"].apply(formata_litro)
+        
+        setor_veic = df_veiculo["Setor"].iloc[0] if not df_veiculo.empty else "-"
+        comb_veic = df_veiculo["Combustível"].iloc[0] if not df_veiculo.empty else "-"
+        st.info(f"📍 **Setor Atual:** {setor_veic} | ⛽ **Combustível Predominante:** {comb_veic}")
+        
+        col_v1, col_v2 = st.columns(2)
+        with col_v1:
+            fig_v1 = px.line(resumo_veiculo, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", markers=True, color_discrete_sequence=["#0C3C7A"], title="Curva de Custo (R$)")
+            fig_v1.update_traces(textposition="top center")
+            st.plotly_chart(fig_v1, use_container_width=True)
+        with col_v2:
+            fig_v2 = px.line(resumo_veiculo, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", markers=True, color_discrete_sequence=["#4CAF50"], title="Curva de Volume (L)")
+            fig_v2.update_traces(textposition="top center")
+            st.plotly_chart(fig_v2, use_container_width=True)
+            
+        st.write(f"**Histórico de Lançamentos - {veiculo_escolhido}**")
+        st.dataframe(formatar_tabela(resumo_veiculo[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
+            
+    # --- ABA 5: COMPARATIVO ANUAL ---
+    with aba5:
+        st.subheader("Variação do Mesmo Mês entre Anos Diferentes")
+        st.write("*(Esta análise cruza toda a base histórica ignorando o filtro lateral)*")
+        
+        meses_salvos = df_db["Nome do Mês"].unique().tolist()
+        mes_escolhido = st.selectbox("Selecione o Mês para comparar:", meses_salvos)
+        
+        df_comparativo = df_db[df_db["Nome do Mês"] == mes_escolhido]
+        resumo_comparativo = df_comparativo.groupby("Ano")[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        resumo_comparativo["Ano"] = resumo_comparativo["Ano"].astype(str)
+        resumo_comparativo["Texto Valor"] = resumo_comparativo["Valor Total (R$)"].apply(formata_moeda)
+        resumo_comparativo["Texto Litros"] = resumo_comparativo["Quantidade (L)"].apply(formata_litro)
+        
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            fig_a1 = px.bar(resumo_comparativo, x="Ano", y="Valor Total (R$)", text="Texto Valor", color="Ano", title=f"Variação Financeira - {mes_escolhido}", color_discrete_sequence=px.colors.qualitative.Set1)
+            fig_a1.update_traces(textposition='outside')
+            st.plotly_chart(fig_a1, use_container_width=True)
+        with col_a2:
+            fig_a2 = px.bar(resumo_comparativo, x="Ano", y="Quantidade (L)", text="Texto Litros", color="Ano", title=f"Variação de Volume (L) - {mes_escolhido}", color_discrete_sequence=px.colors.qualitative.Set1)
+            fig_a2.update_traces(textposition='outside')
+            st.plotly_chart(fig_a2, use_container_width=True)
+            
+        st.write(f"**Tabela Comparativa Anual - {mes_escolhido}**")
+        st.dataframe(formatar_tabela(resumo_comparativo[["Ano", "Quantidade (L)", "Valor Total (R$)"]]), hide_index=True, use_container_width=True)
+
+else:
+    st.info("O banco de dados está vazio. Importe os relatórios PDF acima para gerar o Dashboard.")
