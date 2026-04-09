@@ -17,6 +17,8 @@ if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 if "usuario_logado" not in st.session_state:
     st.session_state.usuario_logado = ""
+if "nivel_acesso" not in st.session_state:
+    st.session_state.nivel_acesso = ""
 
 # ==========================================
 # 2. CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI)
@@ -77,7 +79,6 @@ def converter_para_numero(valor):
 def extrair_dados_pdfs(arquivos):
     dados_gerais = []
     meses_identificados = set()
-    
     for arquivo in arquivos:
         texto_completo = ""
         with pdfplumber.open(arquivo) as pdf:
@@ -100,25 +101,20 @@ def extrair_dados_pdfs(arquivos):
         for linha in linhas:
             linha_limpa = linha.replace("|", "").strip()
             match_veiculo = re.search(r"VE[IÍ]CULO\s*:\s*(.*?)(?:\s+ESP[ÉE]CIE|$)", linha_limpa, re.IGNORECASE)
-            
             if match_veiculo:
                 placa_atual = match_veiculo.group(1).strip()
                 placa_atual = re.sub(r'\s+', ' ', placa_atual)
                 combustivel_atual = "Não Identificado"
                 setor_atual = "Não Identificado"
-                
                 match_combustivel = re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE)
                 if match_combustivel:
                     combustivel_atual = match_combustivel.group(1).strip()
-            
             elif placa_atual and re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE):
                 match_combustivel = re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE)
                 combustivel_atual = match_combustivel.group(1).strip()
-
             elif placa_atual and re.search(r"UNIDADE\s*/\s*SETOR:\s*(.+)", linha_limpa, re.IGNORECASE):
                 match_setor = re.search(r"UNIDADE\s*/\s*SETOR:\s*(.+)", linha_limpa, re.IGNORECASE)
                 setor_atual = match_setor.group(1).strip()
-            
             elif "TOTAL VE" in linha_limpa.upper() and placa_atual:
                 numeros = re.findall(r"\d+(?:\.\d+)*(?:,\d+)?", linha_limpa)
                 if len(numeros) >= 2:
@@ -141,8 +137,81 @@ def extrair_dados_pdfs(arquivos):
                 placa_atual = None 
     return dados_gerais, list(meses_identificados)
 
+
 # ==========================================
-# 4. CONEXÃO COM GOOGLE SHEETS E LIMPEZA
+# 4. BARRA LATERAL (LOGO E LOGIN)
+# ==========================================
+url_brasao = "logo.png"
+col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
+with col_img2:
+    try: st.image(url_brasao, use_container_width=True)
+    except: pass 
+        
+st.sidebar.markdown(
+    """
+    <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
+        Prefeitura Municipal<br>de Jaborandi/SP
+    </div>
+    """, unsafe_allow_html=True
+)
+st.sidebar.markdown("---")
+
+# Lógica de Autenticação Segura
+if not st.session_state.autenticado:
+    st.sidebar.subheader("🔒 Acesso ao Sistema")
+    st.sidebar.write("Faça login para acessar os dados.")
+    
+    usuario_digitado = st.sidebar.text_input("Usuário").strip()
+    senha_digitada = st.sidebar.text_input("Senha", type="password")
+    
+    if st.sidebar.button("Entrar"):
+        login_sucesso = False
+        
+        # 1. Verifica se é um Administrador
+        if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
+            if st.secrets["admin"][usuario_digitado] == senha_digitada:
+                st.session_state.autenticado = True
+                st.session_state.usuario_logado = usuario_digitado
+                st.session_state.nivel_acesso = "admin"
+                login_sucesso = True
+                
+        # 2. Verifica se é um Visualizador (Viewer)
+        elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
+            if st.secrets["viewer"][usuario_digitado] == senha_digitada:
+                st.session_state.autenticado = True
+                st.session_state.usuario_logado = usuario_digitado
+                st.session_state.nivel_acesso = "viewer"
+                login_sucesso = True
+                
+        if login_sucesso:
+            st.rerun()
+        else:
+            st.sidebar.error("Usuário ou senha incorretos!")
+else:
+    st.sidebar.success(f"✅ Logado: **{st.session_state.usuario_logado.capitalize()}**")
+    tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
+    st.sidebar.caption(f"Perfil: {tipo_perfil}")
+    if st.sidebar.button("Sair do Sistema"):
+        st.session_state.autenticado = False
+        st.session_state.usuario_logado = ""
+        st.session_state.nivel_acesso = ""
+        st.rerun()
+
+st.sidebar.markdown("---")
+
+
+# ==========================================
+# 5. BLOQUEIO DE SEGURANÇA (A PORTA DO BANCO)
+# ==========================================
+# Se a pessoa não estiver logada, a página exibe o aviso e PARA o código aqui mesmo.
+if not st.session_state.autenticado:
+    st.title("🏛️ Gestão de Combustível")
+    st.info("🔒 Bem-vindo ao sistema de frotas da Prefeitura de Jaborandi/SP. Por favor, insira suas credenciais no menu lateral para acessar o painel.")
+    st.stop() # Mata a execução do sistema. Mais rápido e 100% seguro.
+
+
+# ==========================================
+# 6. CONEXÃO COM GOOGLE SHEETS (SÓ RODA SE LOGADO)
 # ==========================================
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -161,57 +230,12 @@ try:
 except Exception:
     df_db = pd.DataFrame(columns=colunas_bd)
 
+
 # ==========================================
-# 5. BARRA LATERAL (LOGO, LOGIN E FILTROS)
+# 7. FILTROS E ÁREA DE UPLOAD
 # ==========================================
-url_brasao = "logo.png"
-col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
-with col_img2:
-    try:
-        st.image(url_brasao, use_container_width=True)
-    except:
-        pass 
-        
-st.sidebar.markdown(
-    """
-    <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
-        Prefeitura Municipal<br>de Jaborandi/SP
-    </div>
-    """, unsafe_allow_html=True
-)
-
-st.sidebar.markdown("---")
-
-if not st.session_state.autenticado:
-    st.sidebar.subheader("🔒 Acesso Restrito (Upload)")
-    st.sidebar.write("Faça login para importar relatórios.")
-    
-    usuario_digitado = st.sidebar.text_input("Usuário")
-    senha_digitada = st.sidebar.text_input("Senha", type="password")
-    
-    if st.sidebar.button("Entrar"):
-        if "usuarios" in st.secrets:
-            usuarios_autorizados = st.secrets["usuarios"]
-            if usuario_digitado in usuarios_autorizados and usuarios_autorizados[usuario_digitado] == senha_digitada:
-                st.session_state.autenticado = True
-                st.session_state.usuario_logado = usuario_digitado
-                st.rerun()
-            else:
-                st.sidebar.error("Usuário ou senha incorretos!")
-        else:
-            st.sidebar.error("Erro: Cofre de senhas não configurado no servidor.")
-else:
-    st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
-    if st.sidebar.button("Sair (Bloquear Upload)"):
-        st.session_state.autenticado = False
-        st.session_state.usuario_logado = ""
-        st.rerun()
-
-st.sidebar.markdown("---")
-
 st.sidebar.title("Filtros Gerenciais")
 if not df_db.empty and len(df_db) > 0:
-    # Garante que o ano venha limpo para o filtro
     anos_disponiveis = df_db["Ano"].dropna().astype(str).str.replace(".0", "", regex=False).unique().tolist()
     anos_disponiveis.sort(reverse=True)
     if anos_disponiveis:
@@ -221,25 +245,21 @@ if not df_db.empty and len(df_db) > 0:
 else:
     ano_escolhido = None
 
-# ==========================================
-# 6. ÁREA PRINCIPAL E UPLOAD PROTEGIDO
-# ==========================================
 st.title("🏛️ Gestão de Combustível")
-st.write("Painel gerencial da frota municipal. Importe relatórios (PDF) para alimentar a base ou analise o histórico abaixo.")
 
-if st.session_state.autenticado:
+# Monta a tela de forma inteligente dependendo do perfil
+if st.session_state.nivel_acesso == "admin":
+    st.write("Painel gerencial da frota municipal. Importe relatórios (PDF) para alimentar a base ou analise o histórico abaixo.")
+    
     with st.expander("📥 Importar Novos Relatórios Mensais (PDF)"):
         arquivos_pdf = st.file_uploader(
             "Selecione os arquivos para adicionar ao banco de dados", 
-            type=["pdf"], 
-            accept_multiple_files=True,
-            key=f"uploader_{st.session_state.uploader_key}"
+            type=["pdf"], accept_multiple_files=True, key=f"uploader_{st.session_state.uploader_key}"
         )
 
         if arquivos_pdf:
             try:
                 dados_gerais, meses_identificados = extrair_dados_pdfs(arquivos_pdf)
-                
                 if dados_gerais:
                     df_extraido = pd.DataFrame(dados_gerais)
                     st.success(f"Foram extraídas {len(df_extraido)} linhas de dados de {len(arquivos_pdf)} arquivo(s)!")
@@ -260,25 +280,24 @@ if st.session_state.autenticado:
                         
                         st.session_state.uploader_key += 1
                         st.rerun()
-
             except Exception as e:
                 st.error(f"Erro ao processar: {e}")
-else:
-    st.info("🔒 A importação de novos relatórios em PDF é restrita à administração. Faça login no menu lateral para liberar o acesso.")
+
+elif st.session_state.nivel_acesso == "viewer":
+    # Se for apenas leitor, a caixa de upload e os avisos simplesmente não existem na tela dele
+    st.write("Painel gerencial da frota municipal. Acompanhe a evolução e o histórico de consumo abaixo.")
 
 
 # ==========================================
-# 7. DASHBOARD GERENCIAL
+# 8. DASHBOARD GERENCIAL
 # ==========================================
 st.write("---")
 
 if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
-    # BLINDAGEM DO EIXO X: Força o ".0" a sumir e garante que seja sempre 2 dígitos ("01", "02")
     df_db["Mês"] = df_db["Mês"].astype(str).str.replace(".0", "", regex=False).str.zfill(2)
     df_db["Ano"] = df_db["Ano"].astype(str).str.replace(".0", "", regex=False)
     
     df_db = df_db.sort_values(by=["Ano", "Mês"])
-    
     df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT).fillna("Desconhecido")
     df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
     ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
