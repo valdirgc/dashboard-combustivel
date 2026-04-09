@@ -324,7 +324,7 @@ if st.session_state.relatorio_recem_enviado:
     st.success("✅ O banco de dados da nuvem foi atualizado com sucesso!")
     
     # ⚠️ TROQUE O NÚMERO ABAIXO PELO WHATSAPP DO PREFEITO (com DDI e DDD, apenas números)
-    numero_prefeito = "5511999999999" 
+    numero_prefeito = "556296962071" 
     
     mensagem = "Olá Prefeito, os dados de consumo de combustível da frota acabam de ser atualizados no painel gerencial. O sistema já está pronto para visualização e análise."
     link_wpp = f"https://api.whatsapp.com/send?phone={numero_prefeito}&text={mensagem.replace(' ', '%20')}"
