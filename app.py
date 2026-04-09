@@ -11,19 +11,19 @@ import time
 import json
 
 # ==========================================
-# 1. CONFIGURAÇÕES INICIAIS E MEMÓRIA
+# 1. CONFIGURAÇÕES INICIAIS
 # ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
-# Inicialização do Cookie Manager
-cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota_vfinal")
+# Gerenciador de Cookies
+cookie_manager = stx.CookieManager(key="frota_jaborandi_vfinal_fix")
 
-# --- TRAVA DE PERSISTÊNCIA (ESSENCIAL PARA O F5) ---
-# Se o navegador ainda não carregou os cookies, o Python "congela" e espera.
-# Isso garante que o 'Manter Conectado' funcione 100% das vezes.
-todos_cookies = cookie_manager.get_all()
-if todos_cookies is None:
-    st.stop()
+# --- TRAVA DE PERSISTÊNCIA (O SEGREDO DO F5) ---
+# Se o navegador ainda não respondeu sobre os cookies, o sistema aguarda.
+if "cookies_verificados" not in st.session_state:
+    time.sleep(0.7) # Tempo essencial para o navegador entregar os cookies
+    st.session_state.cookies_verificados = True
+    st.rerun()
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -36,44 +36,50 @@ if "nivel_acesso" not in st.session_state:
 if "ignorar_cookie" not in st.session_state:
     st.session_state.ignorar_cookie = False
 
-# --- LÓGICA DE RECUPERAÇÃO DE LOGIN (COOKIE) ---
+# --- LÓGICA DE RECUPERAÇÃO AUTOMÁTICA ---
 if not st.session_state.autenticado and not st.session_state.ignorar_cookie:
-    pacote_sessao = cookie_manager.get(cookie="sessao_frota_jaborandi")
-    if pacote_sessao:
+    sessao = cookie_manager.get(cookie="sessao_frota_jaborandi")
+    if sessao:
         try:
-            dados = json.loads(pacote_sessao)
+            dados_sessao = json.loads(sessao)
             st.session_state.autenticado = True
-            st.session_state.usuario_logado = dados["user"]
-            st.session_state.nivel_acesso = dados["nivel"]
+            st.session_state.usuario_logado = dados_sessao["user"]
+            st.session_state.nivel_acesso = dados_sessao["nivel"]
         except:
             pass
 
-# Reseta a flag de segurança após o primeiro ciclo
 if st.session_state.ignorar_cookie:
     st.session_state.ignorar_cookie = False
 
 # ==========================================
-# 2. CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI)
+# 2. CUSTOMIZAÇÃO VISUAL (CSS PARA CENTRALIZAR)
 # ==========================================
-st.markdown("""
+st.markdown(f"""
 <style>
-    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
-    h1, h2, h3 { color: #0C3C7A; font-family: 'Segoe UI', sans-serif; font-weight: 700; }
-    .stButton>button {
+    .block-container {{ padding-top: 2rem; }}
+    h1, h2, h3 {{ color: #0C3C7A; font-family: 'Segoe UI', sans-serif; font-weight: 700; }}
+    
+    /* Botão Estilizado */
+    .stButton>button {{
         background-color: #0C3C7A; color: white; border-radius: 8px; 
         border: none; padding: 0.5rem 1rem; transition: all 0.3s ease; font-weight: 600;
         width: 100%;
-    }
-    .stButton>button:hover { background-color: #082954; transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    div[data-testid="stMetricValue"] { color: #0C3C7A; font-weight: 800; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [aria-selected="true"] { background-color: #E8F0FE; border-bottom: 4px solid #0C3C7A !important; color: #0C3C7A !important; font-weight: 800; }
-    [data-testid="stSidebar"] { background-color: #F8F9FA; border-right: 1px solid #DEE2E6; }
+    }}
+    .stButton>button:hover {{ background-color: #082954; transform: translateY(-2px); }}
+    
+    /* Metric Card */
+    div[data-testid="stMetricValue"] {{ color: #0C3C7A; font-weight: 800; }}
+    
+    /* Tabs */
+    .stTabs [aria-selected="true"] {{ background-color: #E8F0FE; border-bottom: 4px solid #0C3C7A !important; color: #0C3C7A !important; font-weight: 800; }}
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {{ background-color: #F8F9FA; border-right: 1px solid #DEE2E6; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. FUNÇÕES BASE E FORMATADORES
+# 3. FUNÇÕES DE TRADUÇÃO E FORMATAÇÃO
 # ==========================================
 MESES_PT = {
     "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
@@ -87,13 +93,13 @@ def formata_moeda(valor):
 def formata_litro(valor):
     return f"{valor:,.2f} L".replace(',', 'X').replace('.', ',').replace('X', '.')
 
-def formatar_tabela_exibicao(df_entrada):
-    df_formatado = df_entrada.copy()
-    if "Valor Total (R$)" in df_formatado.columns:
-        df_formatado["Valor Total (R$)"] = df_formatado["Valor Total (R$)"].apply(formata_moeda)
-    if "Quantidade (L)" in df_formatado.columns:
-        df_formatado["Quantidade (L)"] = df_formatado["Quantidade (L)"].apply(formata_litro)
-    return df_formatado
+def formatar_tabela_para_exibir(df_original):
+    df_f = df_original.copy()
+    if "Valor Total (R$)" in df_f.columns:
+        df_f["Valor Total (R$)"] = df_f["Valor Total (R$)"].apply(formata_moeda)
+    if "Quantidade (L)" in df_f.columns:
+        df_f["Quantidade (L)"] = df_f["Quantidade (L)"].apply(formata_litro)
+    return df_f
 
 def converter_para_numero(valor):
     if pd.isna(valor): return 0.0
@@ -105,7 +111,7 @@ def converter_para_numero(valor):
     try: return float(v_str.replace(',', '.'))
     except: return 0.0
 
-@st.cache_data(show_spinner="Extraindo dados dos relatórios...")
+@st.cache_data(show_spinner="Analisando relatórios...")
 def extrair_dados_pdfs(arquivos):
     dados_gerais = []
     meses_identificados = set()
@@ -132,20 +138,20 @@ def extrair_dados_pdfs(arquivos):
             match_veiculo = re.search(r"VE[IÍ]CULO\s*:\s*(.*?)(?:\s+ESP[ÉE]CIE|$)", linha_limpa, re.IGNORECASE)
             if match_veiculo:
                 placa_atual = re.sub(r'\s+', ' ', match_veiculo.group(1).strip())
-                match_comb = re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE)
-                combustivel_atual = match_comb.group(1).strip() if match_comb else "Não Identificado"
+                match_combustivel = re.search(r"ESP[ÉE]CIE:\s*([A-Z]+)", linha_limpa, re.IGNORECASE)
+                combustivel_atual = match_combustivel.group(1).strip() if match_combustivel else "Não Identificado"
             elif placa_atual and re.search(r"UNIDADE\s*/\s*SETOR:\s*(.+)", linha_limpa, re.IGNORECASE):
                 setor_atual = re.search(r"UNIDADE\s*/\s*SETOR:\s*(.+)", linha_limpa, re.IGNORECASE).group(1).strip()
             elif "TOTAL VE" in linha_limpa.upper() and placa_atual:
                 numeros = re.findall(r"\d+(?:\.\d+)*(?:,\d+)?", linha_limpa)
                 if len(numeros) >= 2:
                     try:
-                        m_n, a_n = mes_sugerido.split("/")
+                        m_num, a_num = mes_sugerido.split("/")
                         dados_gerais.append({
                             "Veículo (Placa e Modelo)": placa_atual, "Setor": setor_atual, "Combustível": combustivel_atual,
                             "Quantidade (L)": float(numeros[-2].replace('.', '').replace(',', '.')),
                             "Valor Total (R$)": float(numeros[-1].replace('.', '').replace(',', '.')),
-                            "Mês/Ano Numérico": mes_sugerido, "Mês": str(m_n).zfill(2), "Ano": int(a_n)
+                            "Mês/Ano Numérico": mes_sugerido, "Mês": str(m_num).zfill(2), "Ano": int(a_num)
                         })
                     except: pass
                 placa_atual = None 
@@ -155,43 +161,46 @@ def extrair_dados_pdfs(arquivos):
 # 4. TELA DE LOGIN CENTRALIZADA
 # ==========================================
 if not st.session_state.autenticado:
-    col_logo1, col_logo2, col_logo3 = st.columns([2, 1, 2])
-    with col_logo2:
+    # Centraliza o logo e o formulário
+    col_l1, col_l2, col_l3 = st.columns([2, 1, 2])
+    with col_l2:
         try: st.image("logo.png", width=150)
         except: pass
+    
     st.markdown("<h1 style='text-align: center;'>Gestão de Combustível</h1>", unsafe_allow_html=True)
     st.write("---")
     
-    col_e1, col_login, col_e3 = st.columns([1, 1.5, 1])
-    with col_login:
-        st.markdown("<h3 style='text-align: center;'>🔒 Login de Acesso</h3>", unsafe_allow_html=True)
-        usuario = st.text_input("Usuário").strip()
-        senha = st.text_input("Senha", type="password")
+    col_f1, col_f2, col_f3 = st.columns([1, 1.5, 1])
+    with col_f2:
+        st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Sistema</h3>", unsafe_allow_html=True)
+        u_digitado = st.text_input("Usuário").strip()
+        p_digitada = st.text_input("Senha", type="password")
         lembrar = st.checkbox("Manter-me conectado neste computador")
         
         if st.button("Entrar no Sistema"):
             perfil = ""
-            if "admin" in st.secrets and usuario in st.secrets["admin"] and st.secrets["admin"][usuario] == senha:
+            if "admin" in st.secrets and u_digitado in st.secrets["admin"] and st.secrets["admin"][u_digitado] == p_digitada:
                 perfil = "admin"
-            elif "viewer" in st.secrets and usuario in st.secrets["viewer"] and st.secrets["viewer"][usuario] == senha:
+            elif "viewer" in st.secrets and u_digitado in st.secrets["viewer"] and st.secrets["viewer"][u_digitado] == p_digitada:
                 perfil = "viewer"
             
             if perfil:
                 st.session_state.autenticado = True
-                st.session_state.usuario_logado = usuario
+                st.session_state.usuario_logado = u_digitado
                 st.session_state.nivel_acesso = perfil
+                
                 if lembrar:
-                    pacote = json.dumps({"user": usuario, "nivel": perfil})
-                    validade = datetime.datetime.now() + datetime.timedelta(days=30)
-                    cookie_manager.set("sessao_frota_jaborandi", pacote, expires_at=validade)
+                    pacote = json.dumps({"user": u_digitado, "nivel": perfil})
+                    expira = datetime.datetime.now() + datetime.timedelta(days=30)
+                    cookie_manager.set("sessao_frota_jaborandi", pacote, expires_at=expira)
                     time.sleep(0.5)
                 st.rerun()
             else:
-                st.error("Credenciais inválidas.")
+                st.error("Usuário ou senha inválidos.")
     st.stop()
 
 # ==========================================
-# 5. CARREGAMENTO DE DADOS (PÓS-LOGIN)
+# 5. CARREGAMENTO DO BANCO DE DADOS
 # ==========================================
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -204,31 +213,34 @@ try:
         df_db = df_db.sort_values(by=["Ano", "Mês"])
         df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT).fillna("Desconhecido")
         df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
+        ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
     else:
-        df_db = pd.DataFrame(columns=["Ano", "Quantidade (L)", "Valor Total (R$)", "Mês/Ano Numérico"])
-except:
-    df_db = pd.DataFrame(columns=["Ano"])
+        df_db = pd.DataFrame(columns=["Ano", "Quantidade (L)", "Valor Total (R$)", "Mês/Ano Numérico", "Mês/Ano Exibição"])
+        ordem_cronologica = []
+except Exception as e:
+    st.error(f"Erro ao carregar banco: {e}")
+    df_db = pd.DataFrame()
 
 # ==========================================
 # 6. BARRA LATERAL (FILTROS E RESUMO NO TOPO)
 # ==========================================
 with st.sidebar:
     st.subheader("📊 Filtros e Resumo")
-    if not df_db.empty and len(df_db) > 1:
-        lista_anos = sorted(df_db["Ano"].unique().tolist(), reverse=True)
-        ano_selecionado = st.selectbox("Escolha o Ano:", lista_anos)
-        df_ano = df_db[df_db["Ano"] == ano_selecionado]
+    if not df_db.empty and len(df_db) > 0:
+        anos_disp = sorted(df_db["Ano"].unique().tolist(), reverse=True)
+        ano_escolhido = st.selectbox("Selecione o Ano:", anos_disp)
+        df_ano = df_db[df_db["Ano"] == ano_escolhido]
         
-        st.info(f"**Resumo Global {ano_selecionado}:**\n\n💰 {formata_moeda(df_ano['Valor Total (R$)'].sum())}\n\n⛽ {formata_litro(df_ano['Quantidade (L)'].sum())}")
+        st.info(f"**Resumo Global {ano_escolhido}:**\n\n"
+                f"Custo: **{formata_moeda(df_ano['Valor Total (R$)'].sum())}**\n\n"
+                f"Volume: **{formata_litro(df_ano['Quantidade (L)'].sum())}**")
     else:
-        ano_selecionado, df_ano = None, pd.DataFrame()
+        ano_escolhido, df_ano = None, pd.DataFrame()
 
     st.markdown("---")
-    st.write(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
+    st.write(f"✅ Logado: **{st.session_state.usuario_logado.capitalize()}**")
     if st.button("Sair do Sistema"):
-        # Limpa Cookies de forma segura
-        if type(todos_cookies) is dict and "sessao_frota_jaborandi" in todos_cookies:
-            cookie_manager.delete("sessao_frota_jaborandi")
+        cookie_manager.delete("sessao_frota_jaborandi")
         st.session_state.autenticado = False
         st.session_state.usuario_logado = ""
         st.session_state.nivel_acesso = ""
@@ -243,79 +255,129 @@ st.title("🏛️ Sistema de Gestão de Frota")
 
 if st.session_state.nivel_acesso == "admin":
     with st.expander("📥 Importar Novos Relatórios (PDF)"):
-        arquivos_pdf = st.file_uploader("Upload de PDFs", type=["pdf"], accept_multiple_files=True)
-        if arquivos_pdf:
-            dados_pdf, meses_pdf = extrair_dados_pdfs(arquivos_pdf)
-            if dados_pdf:
-                df_novos = pd.DataFrame(dados_pdf)
-                st.success(f"Identificados meses: {', '.join(meses_pdf)}")
-                if st.button("💾 Salvar na Nuvem (Google Sheets)"):
+        files_up = st.file_uploader("Selecione os PDFs", type=["pdf"], accept_multiple_files=True)
+        if files_up:
+            dados_lidos, meses_lidos = extrair_dados_pdfs(files_up)
+            if dados_lidos:
+                df_novos = pd.DataFrame(dados_lidos)
+                st.success(f"Identificados meses: {', '.join(meses_lidos)}")
+                if st.button("💾 Salvar Dados na Nuvem"):
                     ja_salvos = df_db["Mês/Ano Numérico"].unique().tolist() if not df_db.empty else []
-                    df_final = df_novos[~df_novos["Mês/Ano Numérico"].isin(ja_salvos)]
-                    if not df_final.empty:
-                        conn.update(worksheet="Dados", data=pd.concat([df_db, df_final], ignore_index=True))
-                        st.success("Sincronização concluída!")
+                    df_filtrado = df_novos[~df_novos["Mês/Ano Numérico"].isin(ja_salvos)]
+                    if not df_filtrado.empty:
+                        df_final = pd.concat([df_db, df_filtrado], ignore_index=True)
+                        conn.update(worksheet="Dados", data=df_final)
+                        st.success("Dados integrados!")
                         time.sleep(1); st.rerun()
-                    else: st.error("Esses dados já constam no banco.")
+                    else: st.error("Esses meses já existem no banco de dados.")
 
 st.write("---")
 
 # ==========================================
-# 8. DASHBOARD COMPLETO (COM TABELAS DETALHADAS)
+# 8. DASHBOARD (COM TABELAS RESTAURADAS)
 # ==========================================
 if not df_ano.empty:
-    aba1, aba2, aba3, aba4, aba5 = st.tabs(["📈 Geral", "🏢 Setor", "⛽ Combustível", "🚛 Veículo", "📅 Comparativo"])
-    ordem_meses = df_db["Mês/Ano Exibição"].unique().tolist()
-    id_grafico = f"_{ano_selecionado}"
+    aba1, aba2, aba3, aba4, aba5 = st.tabs(["📊 Geral", "🏢 Setor", "⛽ Combustível", "🚛 Veículo", "📅 Comparativo"])
+    s_key = f"_{ano_escolhido}"
 
+    # --- ABA 1: GERAL ---
     with aba1:
-        st.subheader(f"Evolução Total - {ano_selecionado}")
-        resumo_geral = df_ano.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
-        col1, col2 = st.columns(2)
-        col1.plotly_chart(px.bar(resumo_geral, x="Mês/Ano Exibição", y="Valor Total (R$)", text=resumo_geral["Valor Total (R$)"].apply(formata_moeda), title="Custo Mensal", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_meses}), use_container_width=True, key=f"g1{id_grafico}")
-        col2.plotly_chart(px.bar(resumo_geral, x="Mês/Ano Exibição", y="Quantidade (L)", text=resumo_geral["Quantidade (L)"].apply(formata_litro), title="Consumo Mensal", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_meses}), use_container_width=True, key=f"g2{id_grafico}")
+        st.subheader(f"Evolução Total - {ano_escolhido}")
+        res_geral = df_ano.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        res_geral["TXT_V"] = res_geral["Valor Total (R$)"].apply(formata_moeda)
+        res_geral["TXT_L"] = res_geral["Quantidade (L)"].apply(formata_litro)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            fig1 = px.bar(res_geral, x="Mês/Ano Exibição", y="Valor Total (R$)", text="TXT_V", title="Custo Mensal", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig1, use_container_width=True, key=f"g1{s_key}")
+        with c2:
+            fig2 = px.bar(res_geral, x="Mês/Ano Exibição", y="Quantidade (L)", text="TXT_L", title="Volume Mensal", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig2, use_container_width=True, key=f"g2{s_key}")
+            
         st.write("**Detalhamento dos Dados Mensais:**")
-        st.dataframe(formatar_tabela_exibicao(resumo_geral), use_container_width=True, hide_index=True)
+        st.dataframe(formatar_tabela_para_exibir(res_geral[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True, hide_index=True)
 
+    # --- ABA 2: POR SETOR ---
     with aba2:
-        setores_disp = df_ano["Setor"].unique().tolist()
-        setor_escolhido = st.selectbox("Selecione o Setor:", setores_disp)
-        resumo_setor = df_ano[df_ano["Setor"] == setor_escolhido].groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
-        col1, col2 = st.columns(2)
-        col1.plotly_chart(px.bar(resumo_setor, x="Mês/Ano Exibição", y="Valor Total (R$)", title=f"Gasto: {setor_escolhido}", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_meses}), use_container_width=True, key=f"g3{id_grafico}")
-        col2.plotly_chart(px.bar(resumo_setor, x="Mês/Ano Exibição", y="Quantidade (L)", title=f"Volume: {setor_escolhido}", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_meses}), use_container_width=True, key=f"g4{id_grafico}")
-        st.write(f"**Tabela Resumo - {setor_escolhido}:**")
-        st.dataframe(formatar_tabela_exibicao(resumo_setor), use_container_width=True, hide_index=True)
+        setores = sorted(df_ano["Setor"].unique().tolist())
+        sel_setor = st.selectbox("Selecione o Setor/Secretaria:", setores)
+        df_set = df_ano[df_ano["Setor"] == sel_setor]
+        res_set = df_set.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        res_set["TXT_V"] = res_set["Valor Total (R$)"].apply(formata_moeda)
+        res_set["TXT_L"] = res_set["Quantidade (L)"].apply(formata_litro)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            fig3 = px.bar(res_set, x="Mês/Ano Exibição", y="Valor Total (R$)", text="TXT_V", title=f"Custo: {sel_setor}", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig3, use_container_width=True, key=f"g3{s_key}")
+        with c2:
+            fig4 = px.bar(res_set, x="Mês/Ano Exibição", y="Quantidade (L)", text="TXT_L", title=f"Volume: {sel_setor}", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig4, use_container_width=True, key=f"g4{s_key}")
+        
+        st.write(f"**Tabela Resumo - {sel_setor}:**")
+        st.dataframe(formatar_tabela_para_exibir(res_set[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True, hide_index=True)
 
+    # --- ABA 3: COMBUSTÍVEL ---
     with aba3:
-        combs_disp = df_ano["Combustível"].unique().tolist()
-        comb_escolhido = st.selectbox("Selecione o Combustível:", combs_disp)
-        resumo_comb = df_ano[df_ano["Combustível"] == comb_escolhido].groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
-        col1, col2 = st.columns(2)
-        col1.plotly_chart(px.bar(resumo_comb, x="Mês/Ano Exibição", y="Valor Total (R$)", title=f"Custo com {comb_escolhido}", color_discrete_sequence=["#0C3C7A"]), use_container_width=True, key=f"g5{id_grafico}")
-        col2.plotly_chart(px.bar(resumo_comb, x="Mês/Ano Exibição", y="Quantidade (L)", title=f"Volume de {comb_escolhido}", color_discrete_sequence=["#4CAF50"]), use_container_width=True, key=f"g6{id_grafico}")
-        st.write(f"**Tabela de Consumo - {comb_escolhido}:**")
-        st.dataframe(formatar_tabela_exibicao(resumo_comb), use_container_width=True, hide_index=True)
+        combs = df_ano["Combustível"].unique().tolist()
+        sel_comb = st.selectbox("Selecione o Combustível:", combs)
+        df_c = df_ano[df_ano["Combustível"] == sel_comb]
+        res_c = df_c.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        res_c["TXT_V"] = res_c["Valor Total (R$)"].apply(formata_moeda)
+        res_c["TXT_L"] = res_c["Quantidade (L)"].apply(formata_litro)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            fig5 = px.bar(res_c, x="Mês/Ano Exibição", y="Valor Total (R$)", text="TXT_V", title=f"Gasto com {sel_comb}", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig5, use_container_width=True, key=f"g5{s_key}")
+        with c2:
+            fig6 = px.bar(res_c, x="Mês/Ano Exibição", y="Quantidade (L)", text="TXT_L", title=f"Consumo de {sel_comb}", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig6, use_container_width=True, key=f"g6{s_key}")
+        
+        st.write(f"**Tabela de Consumo - {sel_comb}:**")
+        st.dataframe(formatar_tabela_para_exibir(res_c[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True, hide_index=True)
 
+    # --- ABA 4: POR VEÍCULO ---
     with aba4:
-        veiculos_disp = sorted(df_ano["Veículo (Placa e Modelo)"].unique().tolist())
-        veic_escolhido = st.selectbox("Escolha o Veículo:", veiculos_disp)
-        resumo_veic = df_ano[df_ano["Veículo (Placa e Modelo)"] == veic_escolhido].groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
-        col1, col2 = st.columns(2)
-        col1.plotly_chart(px.line(resumo_veic, x="Mês/Ano Exibição", y="Valor Total (R$)", markers=True, title=f"Curva Financeira: {veic_escolhido}", color_discrete_sequence=["#0C3C7A"]), use_container_width=True, key=f"g7{id_grafico}")
-        col2.plotly_chart(px.line(resumo_veic, x="Mês/Ano Exibição", y="Quantidade (L)", markers=True, title=f"Curva de Consumo: {veic_escolhido}", color_discrete_sequence=["#4CAF50"]), use_container_width=True, key=f"g8{id_grafico}")
-        st.write(f"**Histórico Individual: {veic_escolhido}:**")
-        st.dataframe(formatar_tabela_exibicao(resumo_veic), use_container_width=True, hide_index=True)
+        veiculos = sorted(df_ano["Veículo (Placa e Modelo)"].unique().tolist())
+        sel_veic = st.selectbox("Escolha o Veículo:", veiculos)
+        df_v = df_ano[df_ano["Veículo (Placa e Modelo)"] == sel_veic]
+        res_v = df_v.groupby("Mês/Ano Exibição", sort=False)[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        res_v["TXT_V"] = res_v["Valor Total (R$)"].apply(formata_moeda)
+        res_v["TXT_L"] = res_v["Quantidade (L)"].apply(formata_litro)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            fig7 = px.line(res_v, x="Mês/Ano Exibição", y="Valor Total (R$)", text="TXT_V", markers=True, title=f"Gasto: {sel_veic}", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig7, use_container_width=True, key=f"g7{s_key}")
+        with c2:
+            fig8 = px.line(res_v, x="Mês/Ano Exibição", y="Quantidade (L)", text="TXT_L", markers=True, title=f"Consumo: {sel_veic}", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
+            st.plotly_chart(fig8, use_container_width=True, key=f"g8{s_key}")
+        
+        st.write(f"**Histórico Individual - {sel_veic}:**")
+        st.dataframe(formatar_tabela_para_exibir(res_v[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True, hide_index=True)
 
+    # --- ABA 5: COMPARATIVO ---
     with aba5:
-        meses_lista = df_db["Nome do Mês"].unique().tolist()
-        mes_escolhido = st.selectbox("Escolha o Mês para Comparativo Anual:", meses_lista)
-        df_comp = df_db[df_db["Nome do Mês"] == mes_escolhido].groupby("Ano")[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
-        df_comp["Ano"] = df_comp["Ano"].astype(str)
-        col1, col2 = st.columns(2)
-        col1.plotly_chart(px.bar(df_comp, x="Ano", y="Valor Total (R$)", title=f"Comparativo Financeiro ({mes_escolhido})", color="Ano"), use_container_width=True, key=f"g9{id_grafico}")
-        col2.plotly_chart(px.bar(df_comp, x="Ano", y="Quantidade (L)", title=f"Comparativo de Litros ({mes_escolhido})", color="Ano"), use_container_width=True, key=f"g10{id_grafico}")
-        st.write(f"**Dados Históricos do Mês de {mes_escolhido}:**")
-        st.dataframe(formatar_tabela_exibicao(df_comp), use_container_width=True, hide_index=True)
+        meses_disp = sorted(df_db["Nome do Mês"].unique().tolist())
+        sel_mes = st.selectbox("Mês para comparação:", meses_disp)
+        df_comp = df_db[df_db["Nome do Mês"] == sel_mes]
+        res_comp = df_comp.groupby("Ano")[["Valor Total (R$)", "Quantidade (L)"]].sum().reset_index()
+        res_comp["Ano"] = res_comp["Ano"].astype(str)
+        res_comp["TXT_V"] = res_comp["Valor Total (R$)"].apply(formata_moeda)
+        res_comp["TXT_L"] = res_comp["Quantidade (L)"].apply(formata_litro)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            fig9 = px.bar(res_comp, x="Ano", y="Valor Total (R$)", text="TXT_V", title=f"Financeiro em {sel_mes}", color="Ano")
+            st.plotly_chart(fig9, use_container_width=True, key=f"g9{s_key}")
+        with c2:
+            fig10 = px.bar(res_comp, x="Ano", y="Quantidade (L)", text="TXT_L", title=f"Consumo em {sel_mes}", color="Ano")
+            st.plotly_chart(fig10, use_container_width=True, key=f"g10{s_key}")
+        
+        st.write(f"**Dados Históricos - {sel_mes}:**")
+        st.dataframe(formatar_tabela_para_exibir(res_comp[["Ano", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True, hide_index=True)
 
-else: st.info("Selecione um ano para carregar o Dashboard.")
+else:
+    st.info("Selecione um ano para carregar o Dashboard.")
