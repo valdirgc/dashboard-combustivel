@@ -17,7 +17,7 @@ st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initia
 # Inicialização do Cookie Manager
 cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
-# Trava de Sincronia
+# Trava de Sincronia do Navegador
 if cookie_manager.get_all() is None:
     st.stop()
 
@@ -191,7 +191,7 @@ st.sidebar.markdown("---")
 
 
 # ==========================================
-# 5. TELA DE LOGIN CENTRALIZADA (COM ARMADILHA DE ERRO)
+# 5. TELA DE LOGIN CENTRALIZADA
 # ==========================================
 if not st.session_state.autenticado:
     st.title("🏛️ Sistema de Gestão de Combustível")
@@ -210,41 +210,31 @@ if not st.session_state.autenticado:
         lembrar_me = st.checkbox("Manter-me conectado neste computador")
         
         if st.button("Entrar no Sistema", use_container_width=True):
-            try:
-                login_sucesso = False
-                
-                if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
-                    if st.secrets["admin"][usuario_digitado] == senha_digitada:
-                        st.session_state.autenticado = True
-                        st.session_state.usuario_logado = usuario_digitado
-                        st.session_state.nivel_acesso = "admin"
-                        login_sucesso = True
-                
-                elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
-                    if st.secrets["viewer"][usuario_digitado] == senha_digitada:
-                        st.session_state.autenticado = True
-                        st.session_state.usuario_logado = usuario_digitado
-                        st.session_state.nivel_acesso = "viewer"
-                        login_sucesso = True
-                        
-                if login_sucesso:
-                    if lembrar_me:
-                        expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
-                        cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
-                        cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
-                        
-                        st.warning("🛑 MODO RASTREAMENTO ATIVADO!")
-                        st.info("Eu travei a tela de propósito. Se apareceu um erro, copie agora. Se não tiver erro, aperte F5 no seu teclado para entrar no sistema.")
-                        st.stop() # TRAVA ABSOLUTA PARA VER O ERRO
-                    else:
-                        st.rerun()
-                else:
-                    st.error("Usuário ou senha incorretos! Tente novamente.")
+            login_sucesso = False
             
-            except Exception as e:
-                st.error("🚨 ERRO NO PROCESSO DE LOGIN:")
-                st.exception(e)
-                st.stop()
+            if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
+                if st.secrets["admin"][usuario_digitado] == senha_digitada:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_logado = usuario_digitado
+                    st.session_state.nivel_acesso = "admin"
+                    login_sucesso = True
+            
+            elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
+                if st.secrets["viewer"][usuario_digitado] == senha_digitada:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_logado = usuario_digitado
+                    st.session_state.nivel_acesso = "viewer"
+                    login_sucesso = True
+                    
+            if login_sucesso:
+                if lembrar_me:
+                    expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
+                    cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
+                    cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
+                    time.sleep(0.5) 
+                st.rerun()
+            else:
+                st.error("Usuário ou senha incorretos! Tente novamente.")
                 
     st.stop()
 
@@ -311,17 +301,22 @@ st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
     try:
-        cookie_manager.delete("usuario_logado")
-        cookie_manager.delete("nivel_acesso")
+        # Pega todos os cookies para checar se eles realmente existem antes de apagar
+        todos_cookies = cookie_manager.get_all()
+        
+        if type(todos_cookies) is dict:
+            if "usuario_logado" in todos_cookies:
+                cookie_manager.delete("usuario_logado")
+            if "nivel_acesso" in todos_cookies:
+                cookie_manager.delete("nivel_acesso")
         
         st.session_state.autenticado = False
         st.session_state.usuario_logado = ""
         st.session_state.nivel_acesso = ""
         st.session_state.ignorar_cookie = True 
         
-        st.sidebar.warning("🛑 MODO RASTREAMENTO ATIVADO!")
-        st.sidebar.info("Tela travada de propósito. Se apareceu um erro, copie. Se não, aperte F5 para concluir a saída do sistema.")
-        st.stop() # TRAVA ABSOLUTA PARA VER O ERRO
+        time.sleep(0.5) 
+        st.rerun()
     except Exception as e:
         st.sidebar.error("🚨 ERRO AO SAIR:")
         st.sidebar.exception(e)
@@ -377,7 +372,7 @@ elif st.session_state.nivel_acesso == "viewer":
 st.write("---")
 
 if not df_ano.empty:
-    aba1, aba2, aba3, aba4, aba5 = tabs = st.tabs([
+    aba1, aba2, aba3, aba4, aba5 = st.tabs([
         "📈 Evolução Geral", "🏢 Por Setor", "⛽ Por Combustível", "🚛 Por Veículo", "📅 Comparativo Anual"
     ])
     
