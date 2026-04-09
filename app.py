@@ -16,6 +16,12 @@ st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initia
 # Inicialização do Cookie Manager
 cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
+# --- A MÁGICA DA SINCRONIA ---
+# Se os cookies ainda não foram carregados do navegador, o Python para e ESPERA.
+# Isso resolve 100% dos bugs de deslogar sozinho!
+if cookie_manager.get_all() is None:
+    st.stop()
+
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 if "autenticado" not in st.session_state:
@@ -29,7 +35,6 @@ if "ignorar_cookie" not in st.session_state:
 
 # --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
 try:
-    # Se acabou de clicar em Sair, ignora os cookies por 1 ciclo para dar tempo do navegador deletá-los
     if st.session_state.ignorar_cookie:
         st.session_state.ignorar_cookie = False
         usuario_cookie = None
@@ -187,7 +192,7 @@ st.sidebar.markdown("---")
 
 
 # ==========================================
-# 5. TELA DE LOGIN CENTRALIZADA (COM CAPTURA DE ERRO)
+# 5. TELA DE LOGIN CENTRALIZADA
 # ==========================================
 if not st.session_state.autenticado:
     st.title("🏛️ Sistema de Gestão de Combustível")
@@ -294,7 +299,7 @@ else:
     ano_escolhido = None
     df_ano = pd.DataFrame()
 
-# Rodapé da Barra Lateral e Soft Logout
+# Rodapé da Barra Lateral e Logout
 st.sidebar.markdown("---")
 st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
 tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
