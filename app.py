@@ -304,11 +304,11 @@ if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
         with col1:
             fig1 = px.bar(resumo_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", title="Custo Financeiro (R$)", color_discrete_sequence=["#0C3C7A"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig1.update_traces(textposition='outside')
-            st.plotly_chart(fig1, use_container_width=True, key="chart_geral_custo")
+            st.plotly_chart(fig1, width="stretch", key="graf_geral_custo")
         with col2:
             fig2 = px.bar(resumo_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", title="Volume Consumido (Litros)", color_discrete_sequence=["#4CAF50"], category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig2.update_traces(textposition='outside')
-            st.plotly_chart(fig2, use_container_width=True, key="chart_geral_vol")
+            st.plotly_chart(fig2, width="stretch", key="graf_geral_vol")
             
         st.write("**Tabela de Consolidação Mensal**")
         st.dataframe(formatar_tabela(resumo_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
@@ -326,11 +326,11 @@ if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
         with col_s1:
             fig_s1 = px.bar(resumo_setor_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", color_discrete_sequence=["#0C3C7A"], title=f"Custo (R$)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_s1.update_traces(textposition='auto')
-            st.plotly_chart(fig_s1, use_container_width=True, key="chart_setor_custo")
+            st.plotly_chart(fig_s1, width="stretch", key="graf_setor_custo")
         with col_s2:
             fig_s2 = px.bar(resumo_setor_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", color_discrete_sequence=["#4CAF50"], title=f"Consumo (L)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_s2.update_traces(textposition='auto')
-            st.plotly_chart(fig_s2, use_container_width=True, key="chart_setor_vol")
+            st.plotly_chart(fig_s2, width="stretch", key="graf_setor_vol")
             
         col_tabela1, col_tabela2 = st.columns([2, 1])
         with col_tabela1:
@@ -354,11 +354,11 @@ if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
         with col_c1:
             fig_c1 = px.bar(resumo_comb_mes, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", color_discrete_sequence=["#0C3C7A"], title=f"Custo (R$)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_c1.update_traces(textposition='auto')
-            st.plotly_chart(fig_c1, use_container_width=True, key="chart_comb_custo")
+            st.plotly_chart(fig_c1, width="stretch", key="graf_comb_custo")
         with col_c2:
             fig_c2 = px.bar(resumo_comb_mes, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", color_discrete_sequence=["#4CAF50"], title=f"Consumo (L)", category_orders={"Mês/Ano Exibição": ordem_cronologica})
             fig_c2.update_traces(textposition='auto')
-            st.plotly_chart(fig_c2, use_container_width=True, key="chart_comb_vol")
+            st.plotly_chart(fig_c2, width="stretch", key="graf_comb_vol")
             
         st.write(f"**Tabela de Detalhamento - {comb_escolhido}**")
         st.dataframe(formatar_tabela(resumo_comb_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
@@ -382,11 +382,11 @@ if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
         with col_v1:
             fig_v1 = px.line(resumo_veiculo, x="Mês/Ano Exibição", y="Valor Total (R$)", text="Texto Valor", markers=True, color_discrete_sequence=["#0C3C7A"], title="Curva de Custo (R$)")
             fig_v1.update_traces(textposition="top center")
-            st.plotly_chart(fig_v1, use_container_width=True, key="chart_veic_custo")
+            st.plotly_chart(fig_v1, width="stretch", key="graf_veic_custo")
         with col_v2:
             fig_v2 = px.line(resumo_veiculo, x="Mês/Ano Exibição", y="Quantidade (L)", text="Texto Litros", markers=True, color_discrete_sequence=["#4CAF50"], title="Curva de Volume (L)")
             fig_v2.update_traces(textposition="top center")
-            st.plotly_chart(fig_v2, use_container_width=True, key="chart_veic_vol")
+            st.plotly_chart(fig_v2, width="stretch", key="graf_veic_vol")
             
         st.write(f"**Histórico de Lançamentos - {veiculo_escolhido}**")
         st.dataframe(formatar_tabela(resumo_veiculo[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
@@ -409,11 +409,11 @@ if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
         with col_a1:
             fig_a1 = px.bar(resumo_comparativo, x="Ano", y="Valor Total (R$)", text="Texto Valor", color="Ano", title=f"Variação Financeira - {mes_escolhido}", color_discrete_sequence=px.colors.qualitative.Set1)
             fig_a1.update_traces(textposition='outside')
-            st.plotly_chart(fig_a1, use_container_width=True, key="chart_ano_custo")
+            st.plotly_chart(fig_a1, width="stretch", key="graf_ano_custo")
         with col_a2:
             fig_a2 = px.bar(resumo_comparativo, x="Ano", y="Quantidade (L)", text="Texto Litros", color="Ano", title=f"Variação de Volume (L) - {mes_escolhido}", color_discrete_sequence=px.colors.qualitative.Set1)
             fig_a2.update_traces(textposition='outside')
-            st.plotly_chart(fig_a2, use_container_width=True, key="chart_ano_vol")
+            st.plotly_chart(fig_a2, width="stretch", key="graf_ano_vol")
             
         st.write(f"**Tabela Comparativa Anual - {mes_escolhido}**")
         st.dataframe(formatar_tabela(resumo_comparativo[["Ano", "Quantidade (L)", "Valor Total (R$)"]]), hide_index=True, use_container_width=True)
