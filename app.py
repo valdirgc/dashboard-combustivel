@@ -7,18 +7,15 @@ import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 import extra_streamlit_components as stx
 import datetime
+import time
 
 # ==========================================
 # 1. CONFIGURAÇÕES INICIAIS E MEMÓRIA
 # ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
-# Inicialização limpa do Cookie Manager
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+# Inicialização direta do Cookie Manager (SEM O CACHE QUE ESTAVA DANDO ERRO)
+cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -218,6 +215,7 @@ if not st.session_state.autenticado:
                     expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                     cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
                     cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
+                    time.sleep(0.6) 
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos! Tente novamente.")
@@ -284,12 +282,12 @@ tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "
 st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
-    # Deleta os cookies sem forçar o erro de colisão e limpa o estado
     cookie_manager.delete("usuario_logado")
     cookie_manager.delete("nivel_acesso")
     st.session_state.autenticado = False
     st.session_state.usuario_logado = ""
     st.session_state.nivel_acesso = ""
+    time.sleep(0.5) 
     st.rerun()
 
 
@@ -347,7 +345,6 @@ if not df_ano.empty:
         "📈 Evolução Geral", "🏢 Por Setor", "⛽ Por Combustível", "🚛 Por Veículo", "📅 Comparativo Anual"
     ])
     
-    # Usando o ano_escolhido na KEY do gráfico garante que eles nunca vão se duplicar
     id_sufixo = f"_{ano_escolhido}"
     
     # --- ABA 1: GERAL ---
