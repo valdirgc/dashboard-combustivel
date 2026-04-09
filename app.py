@@ -41,7 +41,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. FUNÇÕES BASE E DICIONÁRIOS
+# 3. FUNÇÕES BASE E EXTRAÇÃO
 # ==========================================
 MESES_PT = {
     "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
@@ -139,7 +139,7 @@ def extrair_dados_pdfs(arquivos):
 
 
 # ==========================================
-# 4. BARRA LATERAL (LOGO E LOGIN)
+# 4. BARRA LATERAL (APENAS O LOGO FIxo)
 # ==========================================
 url_brasao = "logo.png"
 col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
@@ -156,65 +156,68 @@ st.sidebar.markdown(
 )
 st.sidebar.markdown("---")
 
-# Lógica de Autenticação Segura
+# ==========================================
+# 5. TELA DE LOGIN CENTRALIZADA (PORTAL)
+# ==========================================
 if not st.session_state.autenticado:
-    st.sidebar.subheader("🔒 Acesso ao Sistema")
-    st.sidebar.write("Faça login para acessar os dados.")
+    st.title("🏛️ Sistema de Gestão de Combustível")
+    st.write("---")
     
-    usuario_digitado = st.sidebar.text_input("Usuário").strip()
-    senha_digitada = st.sidebar.text_input("Senha", type="password")
+    # Cria 3 colunas para deixar o login espremido e elegante no meio da tela
+    col_espaco1, col_login, col_espaco3 = st.columns([1, 2, 1])
     
-    if st.sidebar.button("Entrar"):
-        login_sucesso = False
+    with col_login:
+        st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Painel</h3>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Por favor, insira suas credenciais institucionais.</p>", unsafe_allow_html=True)
+        st.write("") # Espaçamento
         
-        # 1. Verifica se é um Administrador
-        if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
-            if st.secrets["admin"][usuario_digitado] == senha_digitada:
-                st.session_state.autenticado = True
-                st.session_state.usuario_logado = usuario_digitado
-                st.session_state.nivel_acesso = "admin"
-                login_sucesso = True
+        usuario_digitado = st.text_input("Usuário").strip()
+        senha_digitada = st.text_input("Senha", type="password")
+        
+        if st.button("Entrar no Sistema", use_container_width=True):
+            login_sucesso = False
+            
+            # Checa se é Admin
+            if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
+                if st.secrets["admin"][usuario_digitado] == senha_digitada:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_logado = usuario_digitado
+                    st.session_state.nivel_acesso = "admin"
+                    login_sucesso = True
+            
+            # Checa se é Leitor (Viewer)
+            elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
+                if st.secrets["viewer"][usuario_digitado] == senha_digitada:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_logado = usuario_digitado
+                    st.session_state.nivel_acesso = "viewer"
+                    login_sucesso = True
+                    
+            if login_sucesso:
+                st.rerun()
+            else:
+                st.error("Usuário ou senha incorretos! Tente novamente.")
                 
-        # 2. Verifica se é um Visualizador (Viewer)
-        elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
-            if st.secrets["viewer"][usuario_digitado] == senha_digitada:
-                st.session_state.autenticado = True
-                st.session_state.usuario_logado = usuario_digitado
-                st.session_state.nivel_acesso = "viewer"
-                login_sucesso = True
-                
-        if login_sucesso:
-            st.rerun()
-        else:
-            st.sidebar.error("Usuário ou senha incorretos!")
-else:
-    st.sidebar.success(f"✅ Logado: **{st.session_state.usuario_logado.capitalize()}**")
-    tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
-    st.sidebar.caption(f"Perfil: {tipo_perfil}")
-    if st.sidebar.button("Sair do Sistema"):
-        st.session_state.autenticado = False
-        st.session_state.usuario_logado = ""
-        st.session_state.nivel_acesso = ""
-        st.rerun()
+    # O st.stop() MATA a execução do código aqui. Se não logou, ele não lê o Sheets nem desenha gráficos.
+    st.stop()
+
+
+# ==========================================
+# 6. LOGOUT E CONEXÃO NO SHEETS (SÓ RODA SE LOGOU)
+# ==========================================
+st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
+tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
+st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
+
+if st.sidebar.button("Sair do Sistema", use_container_width=True):
+    st.session_state.autenticado = False
+    st.session_state.usuario_logado = ""
+    st.session_state.nivel_acesso = ""
+    st.rerun()
 
 st.sidebar.markdown("---")
 
-
-# ==========================================
-# 5. BLOQUEIO DE SEGURANÇA (A PORTA DO BANCO)
-# ==========================================
-# Se a pessoa não estiver logada, a página exibe o aviso e PARA o código aqui mesmo.
-if not st.session_state.autenticado:
-    st.title("🏛️ Gestão de Combustível")
-    st.info("🔒 Bem-vindo ao sistema de frotas da Prefeitura de Jaborandi/SP. Por favor, insira suas credenciais no menu lateral para acessar o painel.")
-    st.stop() # Mata a execução do sistema. Mais rápido e 100% seguro.
-
-
-# ==========================================
-# 6. CONEXÃO COM GOOGLE SHEETS (SÓ RODA SE LOGADO)
-# ==========================================
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 colunas_bd = [
     "Veículo (Placa e Modelo)", "Setor", "Combustível", 
     "Quantidade (L)", "Valor Total (R$)", "Mês/Ano Numérico", "Mês", "Ano"
@@ -232,7 +235,7 @@ except Exception:
 
 
 # ==========================================
-# 7. FILTROS E ÁREA DE UPLOAD
+# 7. FILTROS LATERAIS E TELA DE UPLOAD
 # ==========================================
 st.sidebar.title("Filtros Gerenciais")
 if not df_db.empty and len(df_db) > 0:
@@ -245,15 +248,15 @@ if not df_db.empty and len(df_db) > 0:
 else:
     ano_escolhido = None
 
-st.title("🏛️ Gestão de Combustível")
 
-# Monta a tela de forma inteligente dependendo do perfil
+st.title("🏛️ Painel de Gestão de Combustível")
+
 if st.session_state.nivel_acesso == "admin":
-    st.write("Painel gerencial da frota municipal. Importe relatórios (PDF) para alimentar a base ou analise o histórico abaixo.")
+    st.write("Importe os novos relatórios mensais (PDF) para alimentar a base de dados.")
     
-    with st.expander("📥 Importar Novos Relatórios Mensais (PDF)"):
+    with st.expander("📥 Importar Novos Relatórios"):
         arquivos_pdf = st.file_uploader(
-            "Selecione os arquivos para adicionar ao banco de dados", 
+            "Selecione os arquivos PDF para adicionar ao histórico", 
             type=["pdf"], accept_multiple_files=True, key=f"uploader_{st.session_state.uploader_key}"
         )
 
@@ -265,7 +268,7 @@ if st.session_state.nivel_acesso == "admin":
                     st.success(f"Foram extraídas {len(df_extraido)} linhas de dados de {len(arquivos_pdf)} arquivo(s)!")
                     st.info(f"Meses identificados: {', '.join(meses_identificados)}")
                     
-                    if st.button("💾 Integrar Dados ao Google Sheets"):
+                    if st.button("💾 Integrar Dados ao Servidor na Nuvem"):
                         meses_ja_salvos = df_db["Mês/Ano Numérico"].dropna().unique().tolist()
                         df_novos = df_extraido[~df_extraido["Mês/Ano Numérico"].isin(meses_ja_salvos)]
                         meses_ignorados = df_extraido[df_extraido["Mês/Ano Numérico"].isin(meses_ja_salvos)]["Mês/Ano Numérico"].unique().tolist()
@@ -273,19 +276,18 @@ if st.session_state.nivel_acesso == "admin":
                         if not df_novos.empty:
                             df_completo = pd.concat([df_db, df_novos], ignore_index=True)
                             conn.update(worksheet="Dados", data=df_completo)
-                            st.success("Novos dados enviados para a nuvem com sucesso!")
+                            st.success("Novos dados enviados e consolidados com sucesso!")
                         
                         if meses_ignorados:
-                            st.error(f"Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados para evitar duplicidade.")
+                            st.error(f"Atenção: Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados para evitar duplicidade de valores.")
                         
                         st.session_state.uploader_key += 1
                         st.rerun()
             except Exception as e:
-                st.error(f"Erro ao processar: {e}")
+                st.error(f"Erro ao processar o arquivo: {e}")
 
 elif st.session_state.nivel_acesso == "viewer":
-    # Se for apenas leitor, a caixa de upload e os avisos simplesmente não existem na tela dele
-    st.write("Painel gerencial da frota municipal. Acompanhe a evolução e o histórico de consumo abaixo.")
+    st.write("Acompanhe o histórico de consumo e custos operacionais da frota municipal abaixo.")
 
 
 # ==========================================
@@ -439,4 +441,4 @@ if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
         st.dataframe(formatar_tabela(resumo_comparativo[["Ano", "Quantidade (L)", "Valor Total (R$)"]]), hide_index=True, use_container_width=True)
 
 else:
-    st.info("A base de dados atual ainda não possui registros para exibição.")
+    st.info("A base de dados atual não possui registros salvos ou está aguardando importação.")
