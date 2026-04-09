@@ -342,7 +342,7 @@ if st.session_state.relatorio_recem_enviado:
     # ⚠️ COLOQUE O WHATSAPP REAL DO PREFEITO AQUI (DDD + NÚMERO)
     numero_prefeito = "556296962071" 
     
-    mensagem = "Olá Prefeito, os dados de consumo de combustível da frota acabam de ser atualizados no painel gerencial. O sistema já está pronto para visualização e análise."
+    mensagem = "Olá Prefeito, os dados de consumo de combustível da frota acabam de ser atualizados no painel gerencial. O sistema já está pronto para visualização e análise no link: https://controlecombustivel.streamlit.app/."
     link_wpp = f"https://api.whatsapp.com/send?phone={numero_prefeito}&text={mensagem.replace(' ', '%20')}"
     
     st.markdown(f"""
