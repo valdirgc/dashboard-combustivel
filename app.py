@@ -5,11 +5,16 @@ import re
 import os
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
+import extra_streamlit_components as stx
+import datetime
 
 # ==========================================
 # 1. CONFIGURAÇÕES INICIAIS E MEMÓRIA
 # ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
+
+# Inicializa o Gerenciador de Cookies
+cookie_manager = stx.CookieManager()
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -19,6 +24,16 @@ if "usuario_logado" not in st.session_state:
     st.session_state.usuario_logado = ""
 if "nivel_acesso" not in st.session_state:
     st.session_state.nivel_acesso = ""
+
+# --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
+usuario_cookie = cookie_manager.get(cookie="usuario_logado")
+nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
+
+if usuario_cookie and nivel_cookie and not st.session_state.autenticado:
+    st.session_state.autenticado = True
+    st.session_state.usuario_logado = usuario_cookie
+    st.session_state.nivel_acesso = nivel_cookie
+
 
 # ==========================================
 # 2. CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI)
@@ -173,6 +188,9 @@ if not st.session_state.autenticado:
         usuario_digitado = st.text_input("Usuário").strip()
         senha_digitada = st.text_input("Senha", type="password")
         
+        # NOVA OPÇÃO: Lembrar-me
+        lembrar_me = st.checkbox("Manter-me conectado neste computador")
+        
         if st.button("Entrar no Sistema", use_container_width=True):
             login_sucesso = False
             
@@ -191,11 +209,16 @@ if not st.session_state.autenticado:
                     login_sucesso = True
                     
             if login_sucesso:
+                if lembrar_me:
+                    # Se marcou, cria o cookie com validade de 30 dias
+                    expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
+                    cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
+                    cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos! Tente novamente.")
                 
-    st.stop() # Mata a execução do código aqui.
+    st.stop()
 
 
 # ==========================================
@@ -215,7 +238,6 @@ try:
         df_db["Quantidade (L)"] = df_db["Quantidade (L)"].apply(converter_para_numero)
         df_db["Valor Total (R$)"] = df_db["Valor Total (R$)"].apply(converter_para_numero)
         
-        # Tratamento das datas para os gráficos e filtros
         df_db["Mês"] = df_db["Mês"].astype(str).str.replace(".0", "", regex=False).str.zfill(2)
         df_db["Ano"] = df_db["Ano"].astype(str).str.replace(".0", "", regex=False)
         df_db = df_db.sort_values(by=["Ano", "Mês"])
@@ -251,13 +273,16 @@ else:
     ano_escolhido = None
     df_ano = pd.DataFrame()
 
-# Rodapé da Barra Lateral (Dados do Usuário)
+# Rodapé da Barra Lateral (Dados do Usuário e Logout)
 st.sidebar.markdown("---")
 st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
 tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
 st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
+    # Ao sair, rasga o crachá digital (deleta os cookies) e limpa a memória
+    cookie_manager.delete("usuario_logado")
+    cookie_manager.delete("nivel_acesso")
     st.session_state.autenticado = False
     st.session_state.usuario_logado = ""
     st.session_state.nivel_acesso = ""
@@ -442,6 +467,3 @@ if not df_ano.empty:
             
         st.write(f"**Tabela Comparativa Anual - {mes_escolhido}**")
         st.dataframe(formatar_tabela(resumo_comparativo[["Ano", "Quantidade (L)", "Valor Total (R$)"]]), hide_index=True, use_container_width=True)
-
-else:
-    st.info("A base de dados atual não possui registros salvos ou está aguardando importação.")
