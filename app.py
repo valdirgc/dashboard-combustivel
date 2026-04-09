@@ -4,15 +4,23 @@ import pandas as pd
 import re
 import os
 import plotly.express as px
+from streamlit_gsheets import GSheetsConnection
 
-# Configuração da página (Sempre a primeira linha)
+# ==========================================
+# 1. CONFIGURAÇÕES INICIAIS E MEMÓRIA
+# ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
-# --- INICIALIZAÇÃO DA MEMÓRIA (Para limpar o Upload) ---
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+if "usuario_logado" not in st.session_state:
+    st.session_state.usuario_logado = ""
 
-# --- CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI) ---
+# ==========================================
+# 2. CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI)
+# ==========================================
 st.markdown("""
 <style>
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }
@@ -21,29 +29,18 @@ st.markdown("""
         background-color: #0C3C7A; color: white; border-radius: 8px; 
         border: none; padding: 0.5rem 1rem; transition: all 0.3s ease; font-weight: 600;
     }
-    .stButton>button:hover {
-        background-color: #082954; color: white; transform: translateY(-2px);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
+    .stButton>button:hover { background-color: #082954; color: white; transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     div[data-testid="stMetricValue"] { color: #0C3C7A; font-weight: 800; }
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px; background-color: transparent; border-radius: 6px 6px 0px 0px;
-        padding: 10px 20px; border: 1px solid transparent;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #E8F0FE; border-bottom: 4px solid #0C3C7A !important;
-        color: #0C3C7A !important; font-weight: 800;
-    }
+    .stTabs [data-baseweb="tab"] { height: 50px; background-color: transparent; border-radius: 6px 6px 0px 0px; padding: 10px 20px; border: 1px solid transparent; }
+    .stTabs [aria-selected="true"] { background-color: #E8F0FE; border-bottom: 4px solid #0C3C7A !important; color: #0C3C7A !important; font-weight: 800; }
     [data-testid="stSidebar"] { background-color: #F8F9FA; border-right: 1px solid #DEE2E6; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏛️ Gestão de Combustível")
-st.write("Painel gerencial da frota municipal. Importe relatórios (PDF) para alimentar a base ou analise o histórico abaixo.")
-
-ARQUIVO_BD = "historico_combustivel.csv"
-
+# ==========================================
+# 3. FUNÇÕES BASE E DICIONÁRIOS
+# ==========================================
 MESES_PT = {
     "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
     "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
@@ -90,8 +87,8 @@ def extrair_dados_pdfs(arquivos):
         
         for linha in linhas:
             linha_limpa = linha.replace("|", "").strip()
-            
             match_veiculo = re.search(r"VE[IÍ]CULO\s*:\s*(.*?)(?:\s+ESP[ÉE]CIE|$)", linha_limpa, re.IGNORECASE)
+            
             if match_veiculo:
                 placa_atual = match_veiculo.group(1).strip()
                 placa_atual = re.sub(r'\s+', ' ', placa_atual)
@@ -132,87 +129,144 @@ def extrair_dados_pdfs(arquivos):
                 placa_atual = None 
     return dados_gerais, list(meses_identificados)
 
-# --- ÁREA DE UPLOAD ---
-with st.expander("📥 Importar Novos Relatórios Mensais (PDF)"):
-    arquivos_pdf = st.file_uploader(
-        "Selecione os arquivos para adicionar ao banco de dados", 
-        type=["pdf"], 
-        accept_multiple_files=True,
-        key=f"uploader_{st.session_state.uploader_key}"
-    )
+# ==========================================
+# 4. CONEXÃO COM GOOGLE SHEETS
+# ==========================================
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-    if arquivos_pdf:
-        try:
-            dados_gerais, meses_identificados = extrair_dados_pdfs(arquivos_pdf)
-            
-            if dados_gerais:
-                df = pd.DataFrame(dados_gerais)
-                st.success(f"Foram extraídas {len(df)} linhas de dados de {len(arquivos_pdf)} arquivo(s)!")
-                st.info(f"Meses identificados: {', '.join(meses_identificados)}")
+colunas_bd = [
+    "Veículo (Placa e Modelo)", "Setor", "Combustível", 
+    "Quantidade (L)", "Valor Total (R$)", "Mês/Ano Numérico", "Mês", "Ano"
+]
+
+try:
+    df_db = conn.read(worksheet="Dados", ttl=0)
+    if df_db.empty or "Veículo (Placa e Modelo)" not in df_db.columns:
+        df_db = pd.DataFrame(columns=colunas_bd)
+except Exception:
+    df_db = pd.DataFrame(columns=colunas_bd)
+
+# ==========================================
+# 5. BARRA LATERAL (LOGO, LOGIN E FILTROS)
+# ==========================================
+url_brasao = "logo.png"
+col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
+with col_img2:
+    try:
+        st.image(url_brasao, use_container_width=True)
+    except:
+        pass 
+        
+st.sidebar.markdown(
+    """
+    <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
+        Prefeitura Municipal<br>de Jaborandi/SP
+    </div>
+    """, unsafe_allow_html=True
+)
+
+st.sidebar.markdown("---")
+
+# --- SISTEMA DE LOGIN ---
+if not st.session_state.autenticado:
+    st.sidebar.subheader("🔒 Acesso Restrito (Upload)")
+    st.sidebar.write("Faça login para importar relatórios.")
+    
+    usuario_digitado = st.sidebar.text_input("Usuário")
+    senha_digitada = st.sidebar.text_input("Senha", type="password")
+    
+    if st.sidebar.button("Entrar"):
+        if "usuarios" in st.secrets:
+            usuarios_autorizados = st.secrets["usuarios"]
+            if usuario_digitado in usuarios_autorizados and usuarios_autorizados[usuario_digitado] == senha_digitada:
+                st.session_state.autenticado = True
+                st.session_state.usuario_logado = usuario_digitado
+                st.rerun()
+            else:
+                st.sidebar.error("Usuário ou senha incorretos!")
+        else:
+            st.sidebar.error("Erro: Cofre de senhas não configurado no servidor.")
+else:
+    st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
+    if st.sidebar.button("Sair (Bloquear Upload)"):
+        st.session_state.autenticado = False
+        st.session_state.usuario_logado = ""
+        st.rerun()
+
+st.sidebar.markdown("---")
+
+# --- FILTRO DE ANO ---
+st.sidebar.title("Filtros Gerenciais")
+if not df_db.empty and len(df_db) > 0:
+    anos_disponiveis = df_db["Ano"].dropna().astype(str).str.replace(".0", "", regex=False).unique().tolist()
+    anos_disponiveis.sort(reverse=True)
+    if anos_disponiveis:
+        ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
+    else:
+        ano_escolhido = None
+else:
+    ano_escolhido = None
+
+
+# ==========================================
+# 6. ÁREA PRINCIPAL E UPLOAD PROTEGIDO
+# ==========================================
+st.title("🏛️ Gestão de Combustível")
+st.write("Painel gerencial da frota municipal. Importe relatórios (PDF) para alimentar a base ou analise o histórico abaixo.")
+
+if st.session_state.autenticado:
+    with st.expander("📥 Importar Novos Relatórios Mensais (PDF)"):
+        arquivos_pdf = st.file_uploader(
+            "Selecione os arquivos para adicionar ao banco de dados", 
+            type=["pdf"], 
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state.uploader_key}"
+        )
+
+        if arquivos_pdf:
+            try:
+                dados_gerais, meses_identificados = extrair_dados_pdfs(arquivos_pdf)
                 
-                if st.button("💾 Integrar Dados ao Histórico Geral"):
-                    if os.path.exists(ARQUIVO_BD):
-                        df_historico = pd.read_csv(ARQUIVO_BD)
-                        meses_ja_salvos = df_historico["Mês/Ano Numérico"].unique().tolist()
-                        df_novos = df[~df["Mês/Ano Numérico"].isin(meses_ja_salvos)]
-                        meses_ignorados = df[df["Mês/Ano Numérico"].isin(meses_ja_salvos)]["Mês/Ano Numérico"].unique().tolist()
+                if dados_gerais:
+                    df_extraido = pd.DataFrame(dados_gerais)
+                    st.success(f"Foram extraídas {len(df_extraido)} linhas de dados de {len(arquivos_pdf)} arquivo(s)!")
+                    st.info(f"Meses identificados: {', '.join(meses_identificados)}")
+                    
+                    if st.button("💾 Integrar Dados ao Google Sheets"):
+                        meses_ja_salvos = df_db["Mês/Ano Numérico"].dropna().unique().tolist()
+                        df_novos = df_extraido[~df_extraido["Mês/Ano Numérico"].isin(meses_ja_salvos)]
+                        meses_ignorados = df_extraido[df_extraido["Mês/Ano Numérico"].isin(meses_ja_salvos)]["Mês/Ano Numérico"].unique().tolist()
                         
                         if not df_novos.empty:
-                            df_novos.to_csv(ARQUIVO_BD, mode='a', header=False, index=False)
-                            st.success("Novos dados anexados ao banco com sucesso!")
+                            df_completo = pd.concat([df_db, df_novos], ignore_index=True)
+                            conn.update(worksheet="Dados", data=df_completo)
+                            st.success("Novos dados enviados para a nuvem com sucesso!")
                         
                         if meses_ignorados:
                             st.error(f"Os meses {', '.join(meses_ignorados)} já existiam no banco e foram ignorados para evitar duplicidade.")
-                    else:
-                        df.to_csv(ARQUIVO_BD, index=False)
-                        st.success("Banco de dados criado e populado com sucesso!")
-                    
-                    st.session_state.uploader_key += 1
-                    st.rerun()
+                        
+                        st.session_state.uploader_key += 1
+                        st.rerun()
 
-        except Exception as e:
-            st.error(f"Erro ao processar: {e}")
+            except Exception as e:
+                st.error(f"Erro ao processar: {e}")
+else:
+    st.info("🔒 A importação de novos relatórios em PDF é restrita à administração. Faça login no menu lateral para liberar o acesso.")
+
 
 # ==========================================
-# DASHBOARD GERENCIAL (PREFEITO)
+# 7. DASHBOARD GERENCIAL
 # ==========================================
 st.write("---")
 
-if os.path.exists(ARQUIVO_BD):
-    df_db = pd.read_csv(ARQUIVO_BD)
+if not df_db.empty and len(df_db) > 0 and ano_escolhido is not None:
     df_db["Mês"] = df_db["Mês"].astype(str).str.zfill(2)
-    df_db["Ano"] = df_db["Ano"].astype(int).astype(str)
+    df_db["Ano"] = df_db["Ano"].astype(str).str.replace(".0", "", regex=False)
     df_db = df_db.sort_values(by=["Ano", "Mês"])
     
     df_db["Nome do Mês"] = df_db["Mês"].map(MESES_PT)
     df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
     ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
-    
-    # --- BARRA LATERAL (BRASÃO E NOME DA PREFEITURA) ---
-    url_brasao = "logo.png"
-    
-    # Centraliza o brasão usando colunas
-    col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
-    with col_img2:
-        try:
-            st.image(url_brasao, use_container_width=True)
-        except:
-            pass # Se a imagem não for encontrada, ele ignora sem dar erro feio na tela
-            
-    # Texto da Prefeitura logo abaixo da imagem
-    st.sidebar.markdown(
-        """
-        <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
-            Prefeitura Municipal<br>de Jaborandi/SP
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-            
-    st.sidebar.title("Filtros Gerenciais")
-    anos_disponiveis = df_db["Ano"].unique().tolist()
-    anos_disponiveis.sort(reverse=True)
-    ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
     
     df_ano = df_db[df_db["Ano"] == ano_escolhido]
     
@@ -351,4 +405,4 @@ if os.path.exists(ARQUIVO_BD):
         st.dataframe(formatar_tabela(resumo_comparativo[["Ano", "Quantidade (L)", "Valor Total (R$)"]]), hide_index=True, use_container_width=True)
 
 else:
-    st.info("O banco de dados está vazio. Importe os relatórios PDF acima para gerar o Dashboard.")
+    st.info("A base de dados atual ainda não possui registros para exibição.")
