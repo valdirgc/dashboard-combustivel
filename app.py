@@ -7,7 +7,6 @@ import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 import extra_streamlit_components as stx
 import datetime
-import time
 
 # ==========================================
 # 1. CONFIGURAÇÕES INICIAIS E MEMÓRIA
@@ -25,20 +24,26 @@ if "usuario_logado" not in st.session_state:
     st.session_state.usuario_logado = ""
 if "nivel_acesso" not in st.session_state:
     st.session_state.nivel_acesso = ""
+if "ignorar_cookie" not in st.session_state:
+    st.session_state.ignorar_cookie = False
 
 # --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
 try:
-    # Dá tempo para o componente do navegador carregar os cookies
-    time.sleep(0.1)
-    usuario_cookie = cookie_manager.get(cookie="usuario_logado")
-    nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
+    # Se acabou de clicar em Sair, ignora os cookies por 1 ciclo para dar tempo do navegador deletá-los
+    if st.session_state.ignorar_cookie:
+        st.session_state.ignorar_cookie = False
+        usuario_cookie = None
+        nivel_cookie = None
+    else:
+        usuario_cookie = cookie_manager.get(cookie="usuario_logado")
+        nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
 
     if usuario_cookie and nivel_cookie and not st.session_state.autenticado:
         st.session_state.autenticado = True
         st.session_state.usuario_logado = usuario_cookie
         st.session_state.nivel_acesso = nivel_cookie
 except Exception as e:
-    st.error("🚨 Ocorreu um erro ao tentar ler os cookies do navegador. Tire um print desta tela:")
+    st.error("🚨 Erro na leitura dos cookies:")
     st.exception(e)
     st.stop()
 
@@ -220,12 +225,9 @@ if not st.session_state.autenticado:
                         
                 if login_sucesso:
                     if lembrar_me:
-                        st.info("⏳ Salvando acesso de segurança no navegador...")
                         expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                         cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
                         cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
-                        # Dá 1.5s pro navegador processar o cookie antes do Python dar o F5
-                        time.sleep(1.5) 
                     st.rerun()
                 else:
                     st.error("Usuário ou senha incorretos! Tente novamente.")
@@ -263,9 +265,9 @@ try:
         ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
         
 except Exception as e:
-    st.error("🚨 Erro ao tentar conectar com o Google Sheets:")
+    st.error("🚨 Erro ao conectar com o Google Sheets:")
     st.exception(e)
-    df_db = pd.DataFrame(columns=["Ano"]) # Previne quebrar o código
+    df_db = pd.DataFrame(columns=["Ano"]) 
     ordem_cronologica = []
 
 
@@ -300,18 +302,16 @@ st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
     try:
-        st.sidebar.warning("⏳ Desconectando com segurança...")
-        # Limpa os cookies
+        # Envia comando pro JS deletar os cookies
         cookie_manager.delete("usuario_logado")
         cookie_manager.delete("nivel_acesso")
         
-        # Limpa o Python
+        # Limpa memória e liga a FLAG de ignorar cookies no próximo carregamento
         st.session_state.autenticado = False
         st.session_state.usuario_logado = ""
         st.session_state.nivel_acesso = ""
+        st.session_state.ignorar_cookie = True 
         
-        # Dá tempo para o navegador processar a deleção do cookie
-        time.sleep(1.5) 
         st.rerun()
     except Exception as e:
         st.sidebar.error("🚨 ERRO AO SAIR:")
