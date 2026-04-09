@@ -2,3 +2,4 @@ streamlit
 pdfplumber
 pandas
 plotly
+st-gsheets-connection
