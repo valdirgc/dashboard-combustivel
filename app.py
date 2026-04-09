@@ -3,7 +3,7 @@ import pdfplumber
 import pandas as pd
 import re
 import os
-import time  # <-- A biblioteca que vai resolver o nosso problema de tempo
+import time
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 import extra_streamlit_components as stx
@@ -14,12 +14,8 @@ import datetime
 # ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
-# Inicializa o Gerenciador de Cookies com uma chave única
-@st.cache_resource(experimental_allow_widgets=True)
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+# Inicialização limpa e atualizada do Cookie Manager
+cookie_manager = stx.CookieManager()
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -31,14 +27,16 @@ if "nivel_acesso" not in st.session_state:
     st.session_state.nivel_acesso = ""
 
 # --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
+# Executa um leve delay invisível apenas na checagem inicial para garantir a leitura do cookie
+time.sleep(0.1)
 usuario_cookie = cookie_manager.get(cookie="usuario_logado")
 nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
 
-# Se encontrou o cookie e ainda não autenticou nesta sessão, ele loga sozinho
 if usuario_cookie and nivel_cookie and not st.session_state.autenticado:
     st.session_state.autenticado = True
     st.session_state.usuario_logado = usuario_cookie
     st.session_state.nivel_acesso = nivel_cookie
+
 
 # ==========================================
 # 2. CUSTOMIZAÇÃO VISUAL (TEMA JABORANDI)
@@ -59,6 +57,7 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #F8F9FA; border-right: 1px solid #DEE2E6; }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ==========================================
 # 3. FUNÇÕES BASE E EXTRAÇÃO
@@ -176,6 +175,7 @@ st.sidebar.markdown(
 )
 st.sidebar.markdown("---")
 
+
 # ==========================================
 # 5. TELA DE LOGIN CENTRALIZADA (PORTAL)
 # ==========================================
@@ -217,8 +217,7 @@ if not st.session_state.autenticado:
                     expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                     cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
                     cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
-                    # PAUSA DE 0.5 SEGUNDOS PARA O NAVEGADOR SALVAR O COOKIE
-                    time.sleep(0.5) 
+                    time.sleep(0.6) # Tempo para o navegador gravar o cookie de fato
                 st.rerun()
             else:
                 st.error("Usuário ou senha incorretos! Tente novamente.")
@@ -290,7 +289,7 @@ if st.sidebar.button("Sair do Sistema", use_container_width=True):
     st.session_state.autenticado = False
     st.session_state.usuario_logado = ""
     st.session_state.nivel_acesso = ""
-    time.sleep(0.5) # Pausa para deletar com segurança
+    time.sleep(0.6) 
     st.rerun()
 
 
