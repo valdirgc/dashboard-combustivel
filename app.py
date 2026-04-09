@@ -14,7 +14,7 @@ import datetime
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
 # Inicialização limpa do Cookie Manager
-@st.cache_resource(experimental_allow_widgets=True)
+@st.cache_resource
 def get_cookie_manager():
     return stx.CookieManager()
 
