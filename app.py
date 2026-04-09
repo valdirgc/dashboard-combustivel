@@ -14,7 +14,7 @@ import time
 # ==========================================
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
-# Inicialização direta do Cookie Manager (SEM O CACHE QUE ESTAVA DANDO ERRO)
+# Inicialização do Cookie Manager
 cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
 if "uploader_key" not in st.session_state:
@@ -27,13 +27,20 @@ if "nivel_acesso" not in st.session_state:
     st.session_state.nivel_acesso = ""
 
 # --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
-usuario_cookie = cookie_manager.get(cookie="usuario_logado")
-nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
+try:
+    # Dá tempo para o componente do navegador carregar os cookies
+    time.sleep(0.1)
+    usuario_cookie = cookie_manager.get(cookie="usuario_logado")
+    nivel_cookie = cookie_manager.get(cookie="nivel_acesso")
 
-if usuario_cookie and nivel_cookie and not st.session_state.autenticado:
-    st.session_state.autenticado = True
-    st.session_state.usuario_logado = usuario_cookie
-    st.session_state.nivel_acesso = nivel_cookie
+    if usuario_cookie and nivel_cookie and not st.session_state.autenticado:
+        st.session_state.autenticado = True
+        st.session_state.usuario_logado = usuario_cookie
+        st.session_state.nivel_acesso = nivel_cookie
+except Exception as e:
+    st.error("🚨 Ocorreu um erro ao tentar ler os cookies do navegador. Tire um print desta tela:")
+    st.exception(e)
+    st.stop()
 
 
 # ==========================================
@@ -175,7 +182,7 @@ st.sidebar.markdown("---")
 
 
 # ==========================================
-# 5. TELA DE LOGIN CENTRALIZADA (PORTAL)
+# 5. TELA DE LOGIN CENTRALIZADA (COM CAPTURA DE ERRO)
 # ==========================================
 if not st.session_state.autenticado:
     st.title("🏛️ Sistema de Gestão de Combustível")
@@ -194,31 +201,39 @@ if not st.session_state.autenticado:
         lembrar_me = st.checkbox("Manter-me conectado neste computador")
         
         if st.button("Entrar no Sistema", use_container_width=True):
-            login_sucesso = False
+            try:
+                login_sucesso = False
+                
+                if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
+                    if st.secrets["admin"][usuario_digitado] == senha_digitada:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_logado = usuario_digitado
+                        st.session_state.nivel_acesso = "admin"
+                        login_sucesso = True
+                
+                elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
+                    if st.secrets["viewer"][usuario_digitado] == senha_digitada:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_logado = usuario_digitado
+                        st.session_state.nivel_acesso = "viewer"
+                        login_sucesso = True
+                        
+                if login_sucesso:
+                    if lembrar_me:
+                        st.info("⏳ Salvando acesso de segurança no navegador...")
+                        expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
+                        cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
+                        cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
+                        # Dá 1.5s pro navegador processar o cookie antes do Python dar o F5
+                        time.sleep(1.5) 
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos! Tente novamente.")
             
-            if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
-                if st.secrets["admin"][usuario_digitado] == senha_digitada:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_logado = usuario_digitado
-                    st.session_state.nivel_acesso = "admin"
-                    login_sucesso = True
-            
-            elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
-                if st.secrets["viewer"][usuario_digitado] == senha_digitada:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_logado = usuario_digitado
-                    st.session_state.nivel_acesso = "viewer"
-                    login_sucesso = True
-                    
-            if login_sucesso:
-                if lembrar_me:
-                    expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
-                    cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
-                    cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
-                    time.sleep(0.6) 
-                st.rerun()
-            else:
-                st.error("Usuário ou senha incorretos! Tente novamente.")
+            except Exception as e:
+                st.error("🚨 ERRO NO PROCESSO DE LOGIN. Copie o erro abaixo:")
+                st.exception(e)
+                st.stop()
                 
     st.stop()
 
@@ -226,13 +241,13 @@ if not st.session_state.autenticado:
 # ==========================================
 # 6. LER BANCO DE DADOS (PÓS-LOGIN)
 # ==========================================
-conn = st.connection("gsheets", type=GSheetsConnection)
-colunas_bd = [
-    "Veículo (Placa e Modelo)", "Setor", "Combustível", 
-    "Quantidade (L)", "Valor Total (R$)", "Mês/Ano Numérico", "Mês", "Ano"
-]
-
 try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    colunas_bd = [
+        "Veículo (Placa e Modelo)", "Setor", "Combustível", 
+        "Quantidade (L)", "Valor Total (R$)", "Mês/Ano Numérico", "Mês", "Ano"
+    ]
+
     df_db = conn.read(worksheet="Dados", ttl=0)
     if df_db.empty or "Veículo (Placa e Modelo)" not in df_db.columns:
         df_db = pd.DataFrame(columns=colunas_bd)
@@ -247,13 +262,15 @@ try:
         df_db["Mês/Ano Exibição"] = df_db["Nome do Mês"] + " " + df_db["Ano"]
         ordem_cronologica = df_db["Mês/Ano Exibição"].unique().tolist()
         
-except Exception:
-    df_db = pd.DataFrame(columns=colunas_bd)
+except Exception as e:
+    st.error("🚨 Erro ao tentar conectar com o Google Sheets:")
+    st.exception(e)
+    df_db = pd.DataFrame(columns=["Ano"]) # Previne quebrar o código
     ordem_cronologica = []
 
 
 # ==========================================
-# 7. BARRA LATERAL (FILTROS, RESUMO E SAIR)
+# 7. BARRA LATERAL E LOGOUT PROTEGIDO
 # ==========================================
 st.sidebar.title("Filtros Gerenciais")
 
@@ -282,13 +299,23 @@ tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "
 st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
-    cookie_manager.delete("usuario_logado")
-    cookie_manager.delete("nivel_acesso")
-    st.session_state.autenticado = False
-    st.session_state.usuario_logado = ""
-    st.session_state.nivel_acesso = ""
-    time.sleep(0.5) 
-    st.rerun()
+    try:
+        st.sidebar.warning("⏳ Desconectando com segurança...")
+        # Limpa os cookies
+        cookie_manager.delete("usuario_logado")
+        cookie_manager.delete("nivel_acesso")
+        
+        # Limpa o Python
+        st.session_state.autenticado = False
+        st.session_state.usuario_logado = ""
+        st.session_state.nivel_acesso = ""
+        
+        # Dá tempo para o navegador processar a deleção do cookie
+        time.sleep(1.5) 
+        st.rerun()
+    except Exception as e:
+        st.sidebar.error("🚨 ERRO AO SAIR:")
+        st.sidebar.exception(e)
 
 
 # ==========================================
