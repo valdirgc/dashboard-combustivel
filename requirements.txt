@@ -3,3 +3,4 @@ pdfplumber
 pandas
 plotly
 st-gsheets-connection
+extra-streamlit-components
