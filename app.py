@@ -17,8 +17,9 @@ st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initia
 # Inicialização do Cookie Manager
 cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
 
-# Trava de Sincronia do Navegador
-if cookie_manager.get_all() is None:
+# Trava de Sincronia do Navegador (Guardamos o resultado numa variável)
+todos_cookies = cookie_manager.get_all()
+if todos_cookies is None:
     st.stop()
 
 if "uploader_key" not in st.session_state:
@@ -210,31 +211,37 @@ if not st.session_state.autenticado:
         lembrar_me = st.checkbox("Manter-me conectado neste computador")
         
         if st.button("Entrar no Sistema", use_container_width=True):
-            login_sucesso = False
+            try:
+                login_sucesso = False
+                
+                if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
+                    if st.secrets["admin"][usuario_digitado] == senha_digitada:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_logado = usuario_digitado
+                        st.session_state.nivel_acesso = "admin"
+                        login_sucesso = True
+                
+                elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
+                    if st.secrets["viewer"][usuario_digitado] == senha_digitada:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_logado = usuario_digitado
+                        st.session_state.nivel_acesso = "viewer"
+                        login_sucesso = True
+                        
+                if login_sucesso:
+                    if lembrar_me:
+                        expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
+                        cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
+                        cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
+                        time.sleep(0.5) 
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos! Tente novamente.")
             
-            if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
-                if st.secrets["admin"][usuario_digitado] == senha_digitada:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_logado = usuario_digitado
-                    st.session_state.nivel_acesso = "admin"
-                    login_sucesso = True
-            
-            elif "viewer" in st.secrets and usuario_digitado in st.secrets["viewer"]:
-                if st.secrets["viewer"][usuario_digitado] == senha_digitada:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_logado = usuario_digitado
-                    st.session_state.nivel_acesso = "viewer"
-                    login_sucesso = True
-                    
-            if login_sucesso:
-                if lembrar_me:
-                    expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
-                    cookie_manager.set("usuario_logado", usuario_digitado, expires_at=expira_em)
-                    cookie_manager.set("nivel_acesso", st.session_state.nivel_acesso, expires_at=expira_em)
-                    time.sleep(0.5) 
-                st.rerun()
-            else:
-                st.error("Usuário ou senha incorretos! Tente novamente.")
+            except Exception as e:
+                st.error("🚨 ERRO NO PROCESSO DE LOGIN. Copie o erro abaixo:")
+                st.exception(e)
+                st.stop()
                 
     st.stop()
 
@@ -301,9 +308,7 @@ st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
 
 if st.sidebar.button("Sair do Sistema", use_container_width=True):
     try:
-        # Pega todos os cookies para checar se eles realmente existem antes de apagar
-        todos_cookies = cookie_manager.get_all()
-        
+        # Usamos a variável todos_cookies lida lá no topo do código, sem duplicar o get_all()
         if type(todos_cookies) is dict:
             if "usuario_logado" in todos_cookies:
                 cookie_manager.delete("usuario_logado")
