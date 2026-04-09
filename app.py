@@ -61,6 +61,17 @@ def formatar_tabela(df_tabela):
         df_formatado["Quantidade (L)"] = df_formatado["Quantidade (L)"].apply(formata_litro)
     return df_formatado
 
+# O "Tradutor Blindado" para o Google Sheets
+def converter_para_numero(valor):
+    if pd.isna(valor): return 0.0
+    if isinstance(valor, (int, float)): return float(valor)
+    v_str = str(valor).strip()
+    if '.' in v_str and ',' in v_str:
+        v_str = v_str.replace('.', '')
+    v_str = v_str.replace(',', '.')
+    try: return float(v_str)
+    except ValueError: return 0.0
+
 @st.cache_data(show_spinner="Analisando PDFs e extraindo dados...")
 def extrair_dados_pdfs(arquivos):
     dados_gerais = []
@@ -130,7 +141,7 @@ def extrair_dados_pdfs(arquivos):
     return dados_gerais, list(meses_identificados)
 
 # ==========================================
-# 4. CONEXÃO COM GOOGLE SHEETS
+# 4. CONEXÃO COM GOOGLE SHEETS E LIMPEZA
 # ==========================================
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -143,6 +154,10 @@ try:
     df_db = conn.read(worksheet="Dados", ttl=0)
     if df_db.empty or "Veículo (Placa e Modelo)" not in df_db.columns:
         df_db = pd.DataFrame(columns=colunas_bd)
+    else:
+        # A MÁGICA: Força os dados da planilha a virarem números para o gráfico
+        df_db["Quantidade (L)"] = df_db["Quantidade (L)"].apply(converter_para_numero)
+        df_db["Valor Total (R$)"] = df_db["Valor Total (R$)"].apply(converter_para_numero)
 except Exception:
     df_db = pd.DataFrame(columns=colunas_bd)
 
@@ -207,7 +222,6 @@ if not df_db.empty and len(df_db) > 0:
 else:
     ano_escolhido = None
 
-
 # ==========================================
 # 6. ÁREA PRINCIPAL E UPLOAD PROTEGIDO
 # ==========================================
@@ -255,7 +269,7 @@ else:
 
 
 # ==========================================
-# 7. DASHBOARD GERENCIAL (COM CHAVES ÚNICAS)
+# 7. DASHBOARD GERENCIAL
 # ==========================================
 st.write("---")
 
