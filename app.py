@@ -16,15 +16,7 @@ import json
 st.set_page_config(page_title="Sistema Frota - Jaborandi", layout="wide", initial_sidebar_state="expanded")
 
 # Inicialização do Cookie Manager
-cookie_manager = stx.CookieManager(key="gerenciador_cookies_frota")
-
-# --- O "DUPLO CLIQUE INVISÍVEL" PARA SALVAR O F5 ---
-# Força o Streamlit a recarregar a página sozinho 1 vez na primeira vez que abre,
-# dando tempo exato para o JavaScript do navegador entregar os cookies pro Python.
-if "primeira_leitura" not in st.session_state:
-    st.session_state.primeira_leitura = True
-    time.sleep(0.5) 
-    st.rerun() 
+cookie_manager = stx.CookieManager(key="frota_mgr")
 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
@@ -37,19 +29,20 @@ if "nivel_acesso" not in st.session_state:
 if "ignorar_cookie" not in st.session_state:
     st.session_state.ignorar_cookie = False
 
-# --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE EM PACOTE ÚNICO) ---
-try:
-    if st.session_state.ignorar_cookie:
-        st.session_state.ignorar_cookie = False
-    else:
-        pacote_sessao = cookie_manager.get(cookie="sessao_frota")
-        if pacote_sessao and not st.session_state.autenticado:
+# --- LÓGICA DE AUTO-LOGIN (LEITURA DO COOKIE) ---
+if not st.session_state.autenticado and not st.session_state.ignorar_cookie:
+    pacote_sessao = cookie_manager.get(cookie="sessao_frota")
+    if pacote_sessao:
+        try:
             dados = json.loads(pacote_sessao)
             st.session_state.autenticado = True
             st.session_state.usuario_logado = dados["user"]
             st.session_state.nivel_acesso = dados["nivel"]
-except Exception as e:
-    pass
+        except:
+            pass
+
+if st.session_state.ignorar_cookie:
+    st.session_state.ignorar_cookie = False
 
 
 # ==========================================
@@ -62,6 +55,7 @@ st.markdown("""
     .stButton>button {
         background-color: #0C3C7A; color: white; border-radius: 8px; 
         border: none; padding: 0.5rem 1rem; transition: all 0.3s ease; font-weight: 600;
+        width: 100%;
     }
     .stButton>button:hover { background-color: #082954; color: white; transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     div[data-testid="stMetricValue"] { color: #0C3C7A; font-weight: 800; }
@@ -172,45 +166,33 @@ def extrair_dados_pdfs(arquivos):
 
 
 # ==========================================
-# 4. BARRA LATERAL FIXA (LOGO E NOME)
+# 4. TELA DE LOGIN CENTRALIZADA (COM CONTAINER MÁGICO)
 # ==========================================
-url_brasao = "logo.png"
-col_img1, col_img2, col_img3 = st.sidebar.columns([1, 2, 1])
-with col_img2:
-    try: st.image(url_brasao, use_container_width=True)
-    except: pass 
-        
-st.sidebar.markdown(
-    """
-    <div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>
-        Prefeitura Municipal<br>de Jaborandi/SP
-    </div>
-    """, unsafe_allow_html=True
-)
-st.sidebar.markdown("---")
+painel_login = st.empty() # Container que pode ser apagado
 
-
-# ==========================================
-# 5. TELA DE LOGIN CENTRALIZADA
-# ==========================================
 if not st.session_state.autenticado:
-    st.title("🏛️ Sistema de Gestão de Combustível")
-    st.write("---")
-    
-    col_espaco1, col_login, col_espaco3 = st.columns([1, 2, 1])
-    
-    with col_login:
-        st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Painel</h3>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;'>Por favor, insira suas credenciais institucionais.</p>", unsafe_allow_html=True)
-        st.write("") 
+    with painel_login.container():
+        # Brasão ajustado e centralizado
+        col_l1, col_l2, col_l3 = st.columns([2, 1, 2])
+        with col_l2:
+            try: st.image("logo.png", width=150)
+            except: pass
+            
+        st.markdown("<h1 style='text-align: center;'>Gestão de Combustível</h1>", unsafe_allow_html=True)
+        st.write("---")
         
-        usuario_digitado = st.text_input("Usuário").strip()
-        senha_digitada = st.text_input("Senha", type="password")
+        col_f1, col_form, col_f3 = st.columns([1, 1.5, 1])
         
-        lembrar_me = st.checkbox("Manter-me conectado neste computador")
-        
-        if st.button("Entrar no Sistema", use_container_width=True):
-            try:
+        with col_form:
+            st.markdown("<h3 style='text-align: center; color: #0C3C7A;'>🔒 Acesso ao Sistema</h3>", unsafe_allow_html=True)
+            st.write("") 
+            
+            usuario_digitado = st.text_input("Usuário").strip()
+            senha_digitada = st.text_input("Senha", type="password")
+            
+            lembrar_me = st.checkbox("Manter-me conectado neste computador")
+            
+            if st.button("Entrar no Sistema", use_container_width=True):
                 login_sucesso = False
                 
                 if "admin" in st.secrets and usuario_digitado in st.secrets["admin"]:
@@ -232,21 +214,20 @@ if not st.session_state.autenticado:
                         pacote = json.dumps({"user": usuario_digitado, "nivel": st.session_state.nivel_acesso})
                         expira_em = datetime.datetime.now() + datetime.timedelta(days=30)
                         cookie_manager.set("sessao_frota", pacote, expires_at=expira_em)
-                        time.sleep(0.5) 
-                    st.rerun()
+                    
+                    # O "Pulo do Gato": Apaga a tela de login imediatamente sem dar rerun!
+                    # Isso garante que o navegador tenha tempo de salvar o cookie na paz.
+                    painel_login.empty() 
                 else:
                     st.error("Usuário ou senha incorretos! Tente novamente.")
-            
-            except Exception as e:
-                st.error("🚨 ERRO NO PROCESSO DE LOGIN. Copie o erro abaixo:")
-                st.exception(e)
-                st.stop()
-                
-    st.stop()
+                    
+    # Se ainda não logou (errou a senha ou apenas abriu o site), o script para aqui.
+    if not st.session_state.autenticado:
+        st.stop()
 
 
 # ==========================================
-# 6. LER BANCO DE DADOS (PÓS-LOGIN)
+# 5. LER BANCO DE DADOS (SÓ RODA PÓS-LOGIN)
 # ==========================================
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -277,56 +258,63 @@ except Exception as e:
 
 
 # ==========================================
-# 7. BARRA LATERAL E LOGOUT PROTEGIDO
+# 6. BARRA LATERAL E LOGOUT (COM JS NATIVO)
 # ==========================================
-st.sidebar.title("Filtros Gerenciais")
+with st.sidebar:
+    # Logo da Barra Lateral
+    col_s1, col_s2, col_s3 = st.columns([1, 2, 1])
+    with col_s2:
+        try: st.image("logo.png", use_container_width=True)
+        except: pass 
+    st.markdown("<div style='text-align: center; color: #0C3C7A; font-weight: 700; font-size: 16px; margin-bottom: 25px;'>Prefeitura Municipal<br>de Jaborandi/SP</div>", unsafe_allow_html=True)
+    st.markdown("---")
 
-if not df_db.empty and len(df_db) > 0:
-    anos_disponiveis = df_db["Ano"].dropna().unique().tolist()
-    anos_disponiveis.sort(reverse=True)
-    if anos_disponiveis:
-        ano_escolhido = st.sidebar.selectbox("Filtre as análises por Ano:", anos_disponiveis)
-        df_ano = df_db[df_db["Ano"] == ano_escolhido]
-        
-        # O RESUMO BONITÃO DE VOLTA!
-        st.sidebar.write("---")
-        st.sidebar.info(f"**Resumo Global ({ano_escolhido}):**\n\n"
-                        f"💰 Custo: **{formata_moeda(df_ano['Valor Total (R$)'].sum())}**\n\n"
-                        f"⛽ Volume: **{formata_litro(df_ano['Quantidade (L)'].sum())}**")
+    st.title("Filtros Gerenciais")
+
+    if not df_db.empty and len(df_db) > 0:
+        anos_disponiveis = df_db["Ano"].dropna().unique().tolist()
+        anos_disponiveis.sort(reverse=True)
+        if anos_disponiveis:
+            ano_escolhido = st.selectbox("Filtre as análises por Ano:", anos_disponiveis)
+            df_ano = df_db[df_db["Ano"] == ano_escolhido]
+            
+            # O Resumo Bonitão original
+            st.write("---")
+            st.info(f"**Resumo Global ({ano_escolhido}):**\n\n"
+                    f"💰 Custo: **{formata_moeda(df_ano['Valor Total (R$)'].sum())}**\n\n"
+                    f"⛽ Volume: **{formata_litro(df_ano['Quantidade (L)'].sum())}**")
+        else:
+            ano_escolhido = None
+            df_ano = pd.DataFrame()
     else:
         ano_escolhido = None
         df_ano = pd.DataFrame()
-else:
-    ano_escolhido = None
-    df_ano = pd.DataFrame()
 
-# Rodapé da Barra Lateral e Soft Logout
-st.sidebar.markdown("---")
-st.sidebar.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
-tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
-st.sidebar.caption(f"Nível de Acesso: {tipo_perfil}")
+    st.markdown("---")
+    st.success(f"✅ Logado como: **{st.session_state.usuario_logado.capitalize()}**")
+    tipo_perfil = "Administrador" if st.session_state.nivel_acesso == "admin" else "Visualizador"
+    st.caption(f"Nível de Acesso: {tipo_perfil}")
 
-if st.sidebar.button("Sair do Sistema", use_container_width=True):
-    try:
-        todos_cookies_del = cookie_manager.get_all()
-        if type(todos_cookies_del) is dict:
-            if "sessao_frota" in todos_cookies_del:
-                cookie_manager.delete("sessao_frota")
-        
+    if st.button("Sair do Sistema", use_container_width=True):
         st.session_state.autenticado = False
         st.session_state.usuario_logado = ""
         st.session_state.nivel_acesso = ""
         st.session_state.ignorar_cookie = True 
         
-        time.sleep(0.5) 
-        st.rerun()
-    except Exception as e:
-        st.sidebar.error("🚨 ERRO AO SAIR:")
-        st.sidebar.exception(e)
+        # Este componente apaga o cookie no navegador a força e dá um F5 puro!
+        st.components.v1.html(
+            """
+            <script>
+            document.cookie = "sessao_frota=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            window.parent.location.reload();
+            </script>
+            """,
+            height=0
+        )
 
 
 # ==========================================
-# 8. ÁREA PRINCIPAL E UPLOAD PROTEGIDO
+# 7. ÁREA PRINCIPAL E UPLOAD PROTEGIDO
 # ==========================================
 st.title("🏛️ Painel de Gestão de Combustível")
 
@@ -370,7 +358,7 @@ elif st.session_state.nivel_acesso == "viewer":
 
 
 # ==========================================
-# 9. DASHBOARD GERENCIAL (TABELAS ORIGINAIS MANTIDAS)
+# 8. DASHBOARD GERENCIAL (COM TODAS AS TABELAS)
 # ==========================================
 st.write("---")
 
@@ -426,6 +414,7 @@ if not df_ano.empty:
             st.dataframe(formatar_tabela(resumo_setor_mes[["Mês/Ano Exibição", "Quantidade (L)", "Valor Total (R$)"]]), use_container_width=True)
         with col_tabela2:
             st.write(f"**Frota Ativa neste Setor ({ano_escolhido})**")
+            # Tabela de placas do setor resgatada!
             veiculos_do_setor = pd.DataFrame(df_setor["Veículo (Placa e Modelo)"].unique(), columns=["Veículos Vinculados"])
             st.dataframe(veiculos_do_setor, hide_index=True, use_container_width=True)
             
